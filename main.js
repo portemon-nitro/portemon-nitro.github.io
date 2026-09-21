@@ -22,6 +22,16 @@ const DIALOGUE_SECTION_SEPARATOR = "\n\n";
 const DIALOGUE_MESSAGE_COUNT = 3;
 const LEADING_WHITESPACE_PATTERN = /^\s+/u;
 const TRAILING_WHITESPACE_PATTERN = /\s+$/u;
+const FAVICON_SPRITE_SRC = "/favicon/ethan.png";
+const FAVICON_SIZE = 32;
+const FAVICON_TILE_SIZE = 32;
+const FAVICON_CROP_X = 5;
+const FAVICON_CROP_Y = 8;
+const FAVICON_CROP_WIDTH = 21;
+const FAVICON_CROP_HEIGHT = 22;
+const FAVICON_ANIMATION_START_FRAME = 4;
+const FAVICON_ANIMATION_FRAME_COUNT = 4;
+const FAVICON_FRAME_INTERVAL_MS = 300;
 
 const story = document.querySelector(".story");
 const visualStage = document.querySelector(".story__visual");
@@ -506,3 +516,68 @@ if (
 		globalThis.addEventListener("resize", scheduleLayoutUpdate);
 	}
 }
+
+// Animated favicon
+
+const favicon = document.querySelector("#favicon");
+const sprite = new Image();
+
+sprite.src = FAVICON_SPRITE_SRC;
+
+function buildFaviconFrame(canvas, ctx, frame) {
+	ctx.clearRect(0, 0, FAVICON_SIZE, FAVICON_SIZE);
+
+	// Scale up as much as possible while preserving aspect ratio.
+	const scale = Math.min(
+		FAVICON_SIZE / FAVICON_CROP_WIDTH,
+		FAVICON_SIZE / FAVICON_CROP_HEIGHT,
+	);
+	const destW = Math.floor(FAVICON_CROP_WIDTH * scale);
+	const destH = Math.floor(FAVICON_CROP_HEIGHT * scale);
+	const destX = Math.floor((FAVICON_SIZE - destW) / 2);
+	const destY = Math.floor((FAVICON_SIZE - destH) / 2);
+
+	ctx.drawImage(
+		sprite,
+		frame * FAVICON_TILE_SIZE + FAVICON_CROP_X, // source x
+		FAVICON_CROP_Y, // source y
+		FAVICON_CROP_WIDTH, // source width
+		FAVICON_CROP_HEIGHT, // source height
+		destX, // dest x
+		destY, // dest y
+		destW, // dest width
+		destH, // dest height
+	);
+
+	return canvas.toDataURL("image/png");
+}
+
+function startFaviconAnimation(frames) {
+	favicon.href = frames[0];
+
+	if (globalThis.matchMedia(REDUCED_MOTION_QUERY).matches) {
+		return;
+	}
+
+	let frameIndex = 0;
+	globalThis.setInterval(() => {
+		favicon.href = frames[frameIndex];
+		frameIndex = (frameIndex + 1) % frames.length;
+	}, FAVICON_FRAME_INTERVAL_MS);
+}
+
+sprite.addEventListener("load", () => {
+	const canvas = document.createElement("canvas");
+	canvas.width = FAVICON_SIZE;
+	canvas.height = FAVICON_SIZE;
+
+	const ctx = canvas.getContext("2d");
+	ctx.imageSmoothingEnabled = false;
+
+	const frames = Array.from(
+		{ length: FAVICON_ANIMATION_FRAME_COUNT },
+		(_, index) =>
+			buildFaviconFrame(canvas, ctx, FAVICON_ANIMATION_START_FRAME + index),
+	);
+	startFaviconAnimation(frames);
+});
