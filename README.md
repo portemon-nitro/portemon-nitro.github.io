@@ -1,6 +1,6 @@
-# gen4recomp.github.io
+# portemon-nitro.github.io
 
-Landing page for gen4recomp.
+Landing page for the Portémon Nitro project.
 
 The site is dependency-free at runtime: GitHub Pages serves the checked-in
 HTML, CSS, JavaScript, and media files directly. npm is used only for development tooling.
