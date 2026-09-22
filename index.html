@@ -14,6 +14,8 @@
 
     <!-- iOS home-screen/bookmark icon. -->
     <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="preload" href="/fonts/mplus-1p-latin-400.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/mplus-1p-latin-700.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/styles.css" />
     <script type="module" src="/main.js"></script>
   </head>
@@ -29,17 +31,18 @@
           <section class="story__beat story__beat--intro" aria-labelledby="intro-title">
             <h1 class="intro-copy" id="intro-title">
               <span class="intro-copy__games">
-                <abbr class="game-tag game-tag--hg" title="HeartGold">HeartGold</abbr> AND
+                <abbr class="game-tag game-tag--hg" title="HeartGold">HeartGold</abbr>
+                <span class="intro-copy__and">and</span>
                 <abbr class="game-tag game-tag--ss" title="SoulSilver">SoulSilver</abbr>
               </span>
-              <span class="intro-copy__tagline">you know and love&hellip;</span>
+              <span class="intro-copy__tagline">you know and love...</span>
             </h1>
           </section>
 
           <div class="story__breakout-gap" aria-hidden="true"></div>
 
           <section class="story__beat story__beat--payoff" aria-labelledby="payoff-title">
-            <h2 class="payoff-copy" id="payoff-title">&hellip;like you've never seen before.</h2>
+            <h2 class="payoff-copy" id="payoff-title">...like you've <em>never</em> seen before.</h2>
           </section>
 
           <section class="story__dialogue-region" aria-label="Project dialogue">
@@ -66,7 +69,7 @@
                     <li>NOT TOO HIGH-RES</li>
                     <li>DUAL SCREEN SUPPORT (duh)</li>
                     <li>TOUCH/MOUSE CONTROLS</li>
-                    <li>RECOMPWALKER PHONE APP</li>
+                    <li>PORTÉWAKLER PHONE APP</li>
                   </ul>
                   <p>
                     AND WHATEVER ELSE WE CAN COME UP WITH!
