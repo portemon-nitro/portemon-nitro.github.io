@@ -538,7 +538,14 @@ ul {
 
 @media (max-width: 699px) {
 	.legend--hooh {
-		clip-path: polygon(0 0, 100% 0, 100% 40%, 0 50%);
+		/* Matches the Ho-Oh narrow region in main.js: the seam sits within the
+		   height above the dialogue box. */
+		clip-path: polygon(
+			0 0,
+			100% 0,
+			100% calc(var(--dialogue-clearance, 100%) * 0.4),
+			0 calc(var(--dialogue-clearance, 100%) * 0.5)
+		);
 	}
 }
 

@@ -24,7 +24,8 @@ const STICKY_TOLERANCE_PX = 1;
 const PAN_DURATION_MS = 9000;
 // Focus is a source pixel anchored at a target fraction of the stage width and
 // of the height above the dialogue box. The image always covers `region`, a
-// stage fraction matching each legend's CSS mask. New Bark takes its scale
+// stage fraction matching each legend's CSS mask; an `aboveDialogue` region
+// measures its vertical fractions on the height above the dialogue box. New Bark takes its scale
 // from the viewport so it stays still while the handheld frame expands. Once a scene starts fading
 // in, it pans once by min(max, ratio * stage size) CSS pixels, from the
 // `from` multiple to the `to` multiple.
@@ -50,8 +51,14 @@ const SCENE_SHOTS = [
 		focus: { x: 1280, y: 600 },
 		target: { x: 0.3, y: 0.5 },
 		region: { left: 0, top: 0, right: 0.65, bottom: 1 },
-		narrowTarget: { x: 0.5, y: 0.3 },
-		narrowRegion: { left: 0, top: 0, right: 1, bottom: 0.5 },
+		narrowTarget: { x: 0.5, y: 0.25 },
+		narrowRegion: {
+			left: 0,
+			top: 0,
+			right: 1,
+			bottom: 0.5,
+			aboveDialogue: true,
+		},
 		pan: {
 			y: { max: 32, ratio: 0.03, from: -1, to: 1 },
 		},
@@ -175,6 +182,24 @@ if (
 		return 1 - (1 - progress) ** SMOOTHSTEP_SCALE;
 	}
 
+	// Resolves the stage area, in CSS pixels, that the image must cover.
+	function getShotRegion(shot, stage, focusHeight) {
+		let region = shot.region ?? FULL_STAGE;
+		if (stage.width <= LEGENDS_NARROW_MAX_WIDTH) {
+			region = shot.narrowRegion ?? FULL_STAGE;
+		}
+		let regionHeight = stage.height;
+		if (region.aboveDialogue) {
+			regionHeight = focusHeight;
+		}
+		return {
+			left: region.left * stage.width,
+			right: region.right * stage.width,
+			top: region.top * regionHeight,
+			bottom: region.bottom * regionHeight,
+		};
+	}
+
 	// Scales the screenshot down as far as it can while still covering its
 	// region, keeping every game pixel a whole number of device pixels.
 	function placeShot(shot, stage, focusHeight) {
@@ -183,17 +208,15 @@ if (
 		if (narrow && shot.narrowTarget) {
 			target = shot.narrowTarget;
 		}
-		let region = shot.region ?? FULL_STAGE;
-		if (narrow) {
-			region = shot.narrowRegion ?? FULL_STAGE;
-		}
+		const {
+			left: regionLeft,
+			right: regionRight,
+			top: regionTop,
+			bottom: regionBottom,
+		} = getShotRegion(shot, stage, focusHeight);
 		const panProgress = getPanProgress(shot);
 
 		const pixelRatio = globalThis.devicePixelRatio || 1;
-		const regionLeft = region.left * stage.width;
-		const regionRight = region.right * stage.width;
-		const regionTop = region.top * stage.height;
-		const regionBottom = region.bottom * stage.height;
 		let scaleWidth = regionRight - regionLeft;
 		let scaleHeight = regionBottom - regionTop;
 		if (shot.scalesWithViewport) {
@@ -233,6 +256,10 @@ if (
 
 	function placeShots(dialogueTop) {
 		const stage = sceneSurface.getBoundingClientRect();
+		sceneSurface.style.setProperty(
+			"--dialogue-clearance",
+			`${Math.min(stage.height, dialogueTop)}px`,
+		);
 		for (const shot of sceneShots) {
 			let focusHeight = stage.height;
 			if (shot.clearsDialogue !== false) {
@@ -271,7 +298,7 @@ if (
 			const entered = Boolean(layerCues[index]);
 			if (!entered) {
 				panStartTimes.delete(layer);
-			} else if (!panStartTimes.has(layer)) {
+			} else if (!panStartTimes.has(layer) && layer.querySelector("img")) {
 				panStartTimes.set(layer, now);
 			}
 			layer.classList.toggle(SCENE_ENTERED_CLASS, entered);
@@ -586,6 +613,8 @@ if (
 					`${entry.target.getBoundingClientRect().height}px`,
 				);
 			}
+			// Scene focus and the narrow legends seam depend on the box height.
+			scheduleLayoutUpdate();
 		});
 		dialogueHeightObserver.observe(dialogueBox);
 
