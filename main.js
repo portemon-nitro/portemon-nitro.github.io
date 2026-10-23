@@ -8,7 +8,10 @@ const HANDHELD_WIDTH = 256;
 const HANDHELD_HEIGHT = 192;
 const PAGE_GUTTER = 48;
 const BREAKOUT_DISTANCE_VIEWPORTS = 1.65;
-const INITIAL_STAGE_TOP_RATIO = 0.4;
+const INITIAL_STAGE_TOP_RATIO = 0.5;
+// The handheld frame shows this many game pixels across, at the shot's scale.
+const HANDHELD_GAME_PIXELS_WIDE = 192;
+const HANDHELD_MAX_HEIGHT_RATIO = 0.5;
 const SMOOTHSTEP_SCALE = 3;
 // Screenshots are 512x288 game pixels captured at 5x.
 const SOURCE_PIXELS_PER_GAME_PIXEL = 5;
@@ -56,7 +59,7 @@ const SCENE_SHOTS = [
 			left: 0,
 			top: 0,
 			right: 1,
-			bottom: 0.5,
+			bottom: 1,
 			aboveDialogue: true,
 		},
 		pan: {
@@ -89,6 +92,10 @@ const DIALOGUE_CRAZY_ENTER_THRESHOLD = 0.35;
 const DIALOGUE_CRAZY_EXIT_THRESHOLD = 0.25;
 const DIALOGUE_RECRUITMENT_ENTER_THRESHOLD = 0.7;
 const DIALOGUE_RECRUITMENT_EXIT_THRESHOLD = 0.6;
+// The box fades to black with the scenes while still pinned, before the end
+// of its region would scroll it away.
+const DIALOGUE_FADE_THRESHOLD = 0.9;
+const DIALOGUE_FADED_CLASS = "dialogue-box--faded";
 const DIALOGUE_SECTION_SEPARATOR = "\n\n";
 const DIALOGUE_MESSAGE_COUNT = 3;
 const LEADING_WHITESPACE_PATTERN = /^\s+/u;
@@ -141,13 +148,80 @@ if (
 		image: document.querySelector(shot.selector),
 	})).filter((shot) => shot.image instanceof HTMLElement);
 	const panStartTimes = new Map();
+	// Pans reset only once their scene has fully faded out, so the jump back to
+	// the start stays hidden.
+	for (const layer of sceneLayers) {
+		layer.addEventListener("transitionend", () => {
+			if (!layer.classList.contains(SCENE_ENTERED_CLASS)) {
+				panStartTimes.delete(layer);
+			}
+		});
+	}
 
-	function getPanOffset(axis, stageSize, progress) {
+	// Sizes the initial handheld frame from the full-screen shot's game pixel
+	// size, so larger screens show more of New Bark at the same scale.
+	function getHandheldSize(viewportWidth, viewportHeight) {
+		const gamePixelSize =
+			getCoverScale(viewportWidth, viewportHeight) *
+			SOURCE_PIXELS_PER_GAME_PIXEL;
+		const width = Math.min(
+			HANDHELD_GAME_PIXELS_WIDE * gamePixelSize,
+			Math.max(1, viewportWidth - PAGE_GUTTER),
+			viewportHeight *
+				HANDHELD_MAX_HEIGHT_RATIO *
+				(HANDHELD_WIDTH / HANDHELD_HEIGHT),
+		);
+		return { width, height: width * (HANDHELD_HEIGHT / HANDHELD_WIDTH) };
+	}
+
+	function getPanRange(axis, stageSize) {
 		if (!axis) {
 			return 0;
 		}
 		const amount = Math.min(axis.max, axis.ratio * stageSize);
-		return amount * (axis.from + (axis.to - axis.from) * progress);
+		return amount * Math.abs(axis.to - axis.from);
+	}
+
+	// Positions an image edge so the whole pan stays within the bounds, moving
+	// the anchor or shrinking the pan when there isn't enough room, so every
+	// pan runs for its full duration instead of stopping at an edge.
+	function getPannedEdge(bounds, axis, stageSize, progress) {
+		let from = 0;
+		let to = 0;
+		if (axis) {
+			const amount = Math.min(axis.max, axis.ratio * stageSize);
+			from = amount * axis.from;
+			to = amount * axis.to;
+		}
+		const lowest = Math.min(from, to);
+		const highest = Math.max(from, to);
+		const room = Math.max(0, bounds.maximum - bounds.minimum);
+		let fit = 1;
+		if (highest - lowest > room) {
+			fit = room / (highest - lowest);
+		}
+		const anchor = clamp(
+			bounds.edge,
+			bounds.minimum - lowest * fit,
+			bounds.maximum - highest * fit,
+		);
+		return anchor + (from + (to - from) * progress) * fit;
+	}
+
+	// Returns the image scale covering width x height with every game pixel
+	// spanning a whole number of device pixels.
+	function getCoverScale(width, height) {
+		const pixelRatio = globalThis.devicePixelRatio || 1;
+		const devicePixelsPerGamePixel = Math.max(
+			1,
+			Math.ceil(
+				Math.max(width / GAME_WIDTH, height / GAME_HEIGHT) * pixelRatio -
+					SCALE_EPSILON,
+			),
+		);
+		return (
+			devicePixelsPerGamePixel / (SOURCE_PIXELS_PER_GAME_PIXEL * pixelRatio)
+		);
 	}
 
 	function snapToDevicePixel(edge, stageOrigin, round) {
@@ -168,7 +242,7 @@ if (
 	}
 
 	// Pans ease out over a fixed time once their scene enters; scrolling back
-	// past the scene resets it.
+	// past the scene resets it after it fades out.
 	function getPanProgress(shot) {
 		const startTime = panStartTimes.get(shot.image.closest(".scene"));
 		if (startTime === undefined) {
@@ -216,39 +290,40 @@ if (
 		} = getShotRegion(shot, stage, focusHeight);
 		const panProgress = getPanProgress(shot);
 
-		const pixelRatio = globalThis.devicePixelRatio || 1;
 		let scaleWidth = regionRight - regionLeft;
 		let scaleHeight = regionBottom - regionTop;
 		if (shot.scalesWithViewport) {
 			scaleWidth = Math.max(scaleWidth, globalThis.innerWidth);
 			scaleHeight = Math.max(scaleHeight, globalThis.innerHeight);
 		}
-		const devicePixelsPerGamePixel = Math.max(
-			1,
-			Math.ceil(
-				Math.max(scaleWidth / GAME_WIDTH, scaleHeight / GAME_HEIGHT) *
-					pixelRatio -
-					SCALE_EPSILON,
-			),
-		);
-		const scale =
-			devicePixelsPerGamePixel / (SOURCE_PIXELS_PER_GAME_PIXEL * pixelRatio);
+		// Leave room for the pan so exact fits still move.
+		scaleWidth += getPanRange(shot.pan?.x, stage.width);
+		scaleHeight += getPanRange(shot.pan?.y, stage.height);
+		const scale = getCoverScale(scaleWidth, scaleHeight);
 		const width = GAME_WIDTH * SOURCE_PIXELS_PER_GAME_PIXEL * scale;
 		const height = GAME_HEIGHT * SOURCE_PIXELS_PER_GAME_PIXEL * scale;
+		const leftBounds = { minimum: regionRight - width, maximum: regionLeft };
+		const topBounds = { minimum: regionBottom - height, maximum: regionTop };
 		const left = snapEdge(
-			stage.width * target.x -
-				scale * shot.focus.x +
-				getPanOffset(shot.pan?.x, stage.width, panProgress),
-			regionRight - width,
-			regionLeft,
+			getPannedEdge(
+				{ ...leftBounds, edge: stage.width * target.x - scale * shot.focus.x },
+				shot.pan?.x,
+				stage.width,
+				panProgress,
+			),
+			leftBounds.minimum,
+			leftBounds.maximum,
 			stage.left,
 		);
 		const top = snapEdge(
-			focusHeight * target.y -
-				scale * shot.focus.y +
-				getPanOffset(shot.pan?.y, stage.height, panProgress),
-			regionBottom - height,
-			regionTop,
+			getPannedEdge(
+				{ ...topBounds, edge: focusHeight * target.y - scale * shot.focus.y },
+				shot.pan?.y,
+				stage.height,
+				panProgress,
+			),
+			topBounds.minimum,
+			topBounds.maximum,
 			stage.top,
 		);
 		shot.image.style.transform = `translate3d(${left - stage.width / 2}px, ${top - stage.height / 2}px, 0) scale(${scale})`;
@@ -270,7 +345,8 @@ if (
 	}
 
 	// Keeps the title centered on the stage until the stage scrolls away, then
-	// pins it near the top until the stage's black bottom edge pushes it out.
+	// pins it near the top with matching space above and below. The final menu
+	// leaves that band on screen when the page is scrolled to the end.
 	function placeOutroTitle() {
 		if (
 			!(outroPanel instanceof HTMLElement && outroTitle instanceof HTMLElement)
@@ -280,13 +356,18 @@ if (
 		const panelRect = outroPanel.getBoundingClientRect();
 		const titleHeight = outroTitle.offsetHeight;
 		const centeredTop = panelRect.top + (panelRect.height - titleHeight) / 2;
+		const pinMargin = globalThis.innerHeight * OUTRO_TITLE_PIN_TOP_RATIO;
 		const pinnedTop = Math.min(
-			Math.max(centeredTop, globalThis.innerHeight * OUTRO_TITLE_PIN_TOP_RATIO),
-			panelRect.bottom - titleHeight,
+			Math.max(centeredTop, pinMargin),
+			panelRect.bottom - titleHeight - pinMargin,
 		);
 		story.style.setProperty(
 			"--outro-title-shift",
 			`${pinnedTop - centeredTop}px`,
+		);
+		document.documentElement.style.setProperty(
+			"--outro-title-band",
+			`${titleHeight + 2 * pinMargin}px`,
 		);
 	}
 
@@ -296,9 +377,7 @@ if (
 		const now = globalThis.performance.now();
 		sceneLayers.forEach((layer, index) => {
 			const entered = Boolean(layerCues[index]);
-			if (!entered) {
-				panStartTimes.delete(layer);
-			} else if (!panStartTimes.has(layer) && layer.querySelector("img")) {
+			if (entered && !panStartTimes.has(layer) && layer.querySelector("img")) {
 				panStartTimes.set(layer, now);
 			}
 			layer.classList.toggle(SCENE_ENTERED_CLASS, entered);
@@ -317,6 +396,7 @@ if (
 		story.style.removeProperty("--outro-opacity");
 		story.style.removeProperty("--outro-panel-background");
 		story.style.removeProperty("--outro-title-shift");
+		document.documentElement.style.removeProperty("--outro-title-band");
 		for (const layer of sceneLayers) {
 			layer.classList.remove(SCENE_ENTERED_CLASS);
 		}
@@ -515,20 +595,22 @@ if (
 			}
 		}
 
-		function renderDialogueVisual() {
-			const heading = dialogueHeadingByState[requestedDialogueState] ?? "";
-			dialogueVisualHeading.textContent = displayedDialogueText.slice(
+		function renderDialogueVisual(
+			state = requestedDialogueState,
+			displayedText = displayedDialogueText,
+		) {
+			const heading = dialogueHeadingByState[state] ?? "";
+			dialogueVisualHeading.textContent = displayedText.slice(
 				0,
 				heading.length,
 			);
 
-			const bodyDisplayed = displayedDialogueText.slice(
+			const bodyDisplayed = displayedText.slice(
 				heading.length + DIALOGUE_SECTION_SEPARATOR.length,
 			);
-			const listLines = dialogueListLinesByState[requestedDialogueState];
-			const noteLines = dialogueNoteLinesByState[requestedDialogueState] ?? [];
-			const noteSegments =
-				dialogueNoteSegmentsByState[requestedDialogueState] ?? [];
+			const listLines = dialogueListLinesByState[state];
+			const noteLines = dialogueNoteLinesByState[state] ?? [];
+			const noteSegments = dialogueNoteSegmentsByState[state] ?? [];
 
 			dialogueVisual.classList.toggle(
 				"dialogue-box__visual--columns",
@@ -553,6 +635,21 @@ if (
 			dialogueVisualItemElements = [];
 			dialogueVisualBody.replaceChildren();
 			renderDialogueVisualNote(noteSegments, bodyDisplayed);
+		}
+
+		// Sizes the box for its tallest message up front, so typing never grows it.
+		function reserveDialogueHeight() {
+			dialogueVisual.style.minHeight = "";
+			let tallest = 0;
+			for (const [state, text] of Object.entries(dialogueTextByState)) {
+				renderDialogueVisual(state, text);
+				tallest = Math.max(
+					tallest,
+					dialogueVisual.getBoundingClientRect().height,
+				);
+			}
+			renderDialogueVisual();
+			dialogueVisual.style.minHeight = `${tallest}px`;
 		}
 
 		async function typeNextDialogueCharacter() {
@@ -618,13 +715,24 @@ if (
 		});
 		dialogueHeightObserver.observe(dialogueBox);
 
+		function getDialogueProgress() {
+			const regionHeight = Math.max(
+				1,
+				dialogueRegion.offsetHeight - Math.max(1, globalThis.innerHeight),
+			);
+			return clamp(
+				-dialogueRegion.getBoundingClientRect().top / regionHeight,
+				0,
+				1,
+			);
+		}
+
 		function updateDialogue() {
-			const viewportHeight = Math.max(1, globalThis.innerHeight);
 			const dialogueBoxRect = dialogueBox.getBoundingClientRect();
 			const settledTop = Number.parseFloat(getComputedStyle(dialogueBox).top);
 			if (
 				!dialogueStarted &&
-				dialogueBoxRect.top <= settledTop &&
+				dialogueBoxRect.top <= settledTop + STICKY_TOLERANCE_PX &&
 				dialogueBoxRect.bottom > 0
 			) {
 				dialogueStarted = true;
@@ -635,15 +743,7 @@ if (
 				return;
 			}
 
-			const regionHeight = Math.max(
-				1,
-				dialogueRegion.offsetHeight - viewportHeight,
-			);
-			const dialogueProgress = clamp(
-				-dialogueRegion.getBoundingClientRect().top / regionHeight,
-				0,
-				1,
-			);
+			const dialogueProgress = getDialogueProgress();
 			if (
 				requestedDialogueState === "planned-features" &&
 				dialogueProgress >= DIALOGUE_CRAZY_ENTER_THRESHOLD
@@ -671,18 +771,15 @@ if (
 			updateDialogue();
 
 			if (motionPreference.matches) {
+				dialogueBox.classList.remove(DIALOGUE_FADED_CLASS);
 				updateStaticScene();
 				return;
 			}
 
 			const viewportWidth = Math.max(1, globalThis.innerWidth);
 			const viewportHeight = Math.max(1, globalThis.innerHeight);
-			const containedWidth = Math.min(
-				HANDHELD_WIDTH,
-				Math.max(1, viewportWidth - PAGE_GUTTER),
-			);
-			const containedHeight =
-				containedWidth * (HANDHELD_HEIGHT / HANDHELD_WIDTH);
+			const { width: containedWidth, height: containedHeight } =
+				getHandheldSize(viewportWidth, viewportHeight);
 			const horizontalInset = Math.max(0, (viewportWidth - containedWidth) / 2);
 			const initialTop = clamp(
 				viewportHeight * INITIAL_STAGE_TOP_RATIO - containedHeight / 2,
@@ -722,23 +819,23 @@ if (
 		}
 
 		// Scenes follow the dialogue box: Ecruteak once it settles, the legends
-		// and Dragon's Den with its second and third messages, black once it
-		// starts scrolling away, and the title once it has passed above it.
+		// and Dragon's Den with its second and third messages, black as the box
+		// fades out near the end of its region, and the title once the faded box
+		// starts scrolling away.
 		function updateSceneCues() {
 			const dialogueBoxRect = dialogueBox.getBoundingClientRect();
 			const settledTop = Number.parseFloat(getComputedStyle(dialogueBox).top);
-			const titleTop = outroTitle?.getBoundingClientRect().top ?? 0;
-			const dialogueLeaving =
-				dialogueBoxRect.top < settledTop - STICKY_TOLERANCE_PX;
+			const dialogueFaded = getDialogueProgress() >= DIALOGUE_FADE_THRESHOLD;
+			dialogueBox.classList.toggle(DIALOGUE_FADED_CLASS, dialogueFaded);
 			return updateScenes(
 				[
 					dialogueBoxRect.top <= settledTop + STICKY_TOLERANCE_PX,
 					requestedDialogueState === "going-crazy" ||
 						requestedDialogueState === "recruitment",
 					requestedDialogueState === "recruitment",
-					dialogueLeaving,
+					dialogueFaded,
 				],
-				dialogueLeaving && dialogueBoxRect.bottom <= titleTop,
+				dialogueBoxRect.top < settledTop - STICKY_TOLERANCE_PX,
 				settledTop,
 			);
 		}
@@ -754,7 +851,9 @@ if (
 			});
 		}
 
+		reserveDialogueHeight();
 		updateLayout();
+		globalThis.addEventListener("resize", reserveDialogueHeight);
 		globalThis.addEventListener("scroll", scheduleLayoutUpdate, {
 			passive: true,
 		});

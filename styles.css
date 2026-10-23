@@ -258,16 +258,16 @@ ul {
 	letter-spacing: 0;
 	line-height: 1.2;
 	text-align: center;
-	--payoff-outline: rgb(17 16 14 / 90%);
+	--payoff-outline: rgb(17 16 14 / 55%);
 	text-shadow:
-		-0.05em -0.05em 0 var(--payoff-outline),
-		0 -0.05em 0 var(--payoff-outline),
-		0.05em -0.05em 0 var(--payoff-outline),
-		0.05em 0 0 var(--payoff-outline),
-		0.05em 0.05em 0 var(--payoff-outline),
-		0 0.05em 0 var(--payoff-outline),
-		-0.05em 0.05em 0 var(--payoff-outline),
-		-0.05em 0 0 var(--payoff-outline),
+		-0.03em -0.03em 0 var(--payoff-outline),
+		0 -0.03em 0 var(--payoff-outline),
+		0.03em -0.03em 0 var(--payoff-outline),
+		0.03em 0 0 var(--payoff-outline),
+		0.03em 0.03em 0 var(--payoff-outline),
+		0 0.03em 0 var(--payoff-outline),
+		-0.03em 0.03em 0 var(--payoff-outline),
+		-0.03em 0 0 var(--payoff-outline),
 		0 0.1em 0.8em rgb(0 0 0 / 60%);
 }
 
@@ -315,7 +315,7 @@ ul {
 	position: sticky;
 	top: calc(100svh - var(--dialogue-height) - var(--dialogue-bottom));
 	width: min(90vw, 42.5rem);
-	min-height: var(--dialogue-height);
+	min-height: clamp(9rem, 22svh, 11rem);
 	margin: 0 auto;
 	padding: calc(10px + clamp(0.5rem, 1.4vw, 0.75rem))
 		calc(10px + clamp(0.9rem, 2vw, 1.25rem));
@@ -329,6 +329,12 @@ ul {
 		inset 0 0 0 8px var(--dialogue-highlight),
 		4px 4px 0 var(--dialogue-outer);
 	color: var(--dialogue-text);
+	transition: opacity 700ms ease-in-out;
+}
+
+.dialogue-box--faded {
+	opacity: 0;
+	pointer-events: none;
 }
 
 .dialogue-box__semantic {
@@ -442,8 +448,9 @@ ul {
 
 .final-menu {
 	position: relative;
-	min-height: 100svh;
-	padding: clamp(4rem, 12vw, 9rem) clamp(1.25rem, 7vw, 7rem);
+	min-height: calc(100svh - var(--outro-title-band, 0px));
+	/* Height-relative so the menu fits under the outro title band. */
+	padding: clamp(3rem, 8svh, 7rem) clamp(1.25rem, 7vw, 7rem);
 	background: var(--page-background);
 }
 
@@ -538,13 +545,13 @@ ul {
 
 @media (max-width: 699px) {
 	.legend--hooh {
-		/* Matches the Ho-Oh narrow region in main.js: the seam sits within the
-		   height above the dialogue box. */
+		/* The seam sits within the height above the dialogue box, which the
+		   Ho-Oh narrow region in main.js covers. */
 		clip-path: polygon(
 			0 0,
 			100% 0,
-			100% calc(var(--dialogue-clearance, 100%) * 0.4),
-			0 calc(var(--dialogue-clearance, 100%) * 0.5)
+			100% calc(var(--dialogue-clearance, 100%) * 0.5),
+			0 calc(var(--dialogue-clearance, 100%) * 0.6)
 		);
 	}
 }
@@ -593,13 +600,23 @@ ul {
 		grid-template-rows: none;
 	}
 
+	/* Trims the spacing below the title band so short screens end the
+	   scroll before the band clips the title. */
+	.final-menu {
+		padding-bottom: 1.25rem;
+	}
+
+	.menu-list {
+		margin-top: 0.5rem;
+	}
+
 	.menu-option {
 		min-height: 4rem;
 		padding-inline: 0.5rem;
 	}
 
 	.disclaimer {
-		margin-top: 2rem;
+		margin-top: 1rem;
 		font-size: 0.82rem;
 	}
 }
