@@ -24,6 +24,7 @@ const STAGE_CENTER = { x: 0.5, y: 0.5 };
 const FULL_STAGE = { left: 0, top: 0, right: 1, bottom: 1 };
 const SCENE_ENTERED_CLASS = "scene--entered";
 const STICKY_TOLERANCE_PX = 1;
+const DIALOGUE_WIDTH_CHANGE_THRESHOLD_PX = 0.5;
 const PAN_DURATION_MS = 9000;
 // Focus is a source pixel anchored at a target fraction of the stage width and
 // of the height above the dialogue box. The image always covers `region`, a
@@ -140,6 +141,43 @@ if (
 		return Math.min(Math.max(value, minimum), maximum);
 	}
 
+	const smallViewportProbe = document.createElement("div");
+	smallViewportProbe.className =
+		"viewport-height-probe viewport-height-probe--small";
+	smallViewportProbe.setAttribute("aria-hidden", "true");
+	const largeViewportProbe = document.createElement("div");
+	largeViewportProbe.className =
+		"viewport-height-probe viewport-height-probe--large";
+	largeViewportProbe.setAttribute("aria-hidden", "true");
+	visualStage.append(smallViewportProbe, largeViewportProbe);
+	let viewportGeometry;
+
+	function measureViewportGeometry() {
+		const stageRect = visualStage.getBoundingClientRect();
+		const measuredSmallHeight =
+			smallViewportProbe.getBoundingClientRect().height;
+		const measuredLargeHeight =
+			largeViewportProbe.getBoundingClientRect().height;
+		if (
+			![
+				measuredSmallHeight,
+				measuredLargeHeight,
+				stageRect.width,
+				stageRect.height,
+			].every((value) => Number.isFinite(value) && value > 0)
+		) {
+			return viewportGeometry;
+		}
+
+		const stageWidth = stageRect.width;
+		return {
+			stageWidth,
+			stageHeight: stageRect.height,
+			smallHeight: measuredSmallHeight,
+			largeHeight: Math.max(measuredSmallHeight, measuredLargeHeight),
+		};
+	}
+
 	const sceneLayers = Array.from(
 		document.querySelectorAll(".scene:not(.scene--newbark), .scene-blackout"),
 	);
@@ -160,14 +198,13 @@ if (
 
 	// Sizes the initial handheld frame from the full-screen shot's game pixel
 	// size, so larger screens show more of New Bark at the same scale.
-	function getHandheldSize(viewportWidth, viewportHeight) {
+	function getHandheldSize(viewportWidth, smallHeight) {
 		const gamePixelSize =
-			getCoverScale(viewportWidth, viewportHeight) *
-			SOURCE_PIXELS_PER_GAME_PIXEL;
+			getCoverScale(viewportWidth, smallHeight) * SOURCE_PIXELS_PER_GAME_PIXEL;
 		const width = Math.min(
 			HANDHELD_GAME_PIXELS_WIDE * gamePixelSize,
 			Math.max(1, viewportWidth - PAGE_GUTTER),
-			viewportHeight *
+			smallHeight *
 				HANDHELD_MAX_HEIGHT_RATIO *
 				(HANDHELD_WIDTH / HANDHELD_HEIGHT),
 		);
@@ -276,7 +313,7 @@ if (
 
 	// Scales the screenshot down as far as it can while still covering its
 	// region, keeping every game pixel a whole number of device pixels.
-	function placeShot(shot, stage, focusHeight) {
+	function placeShot(shot, stage, focusHeight, largeHeight) {
 		const narrow = stage.width <= LEGENDS_NARROW_MAX_WIDTH;
 		let { target } = shot;
 		if (narrow && shot.narrowTarget) {
@@ -293,8 +330,8 @@ if (
 		let scaleWidth = regionRight - regionLeft;
 		let scaleHeight = regionBottom - regionTop;
 		if (shot.scalesWithViewport) {
-			scaleWidth = Math.max(scaleWidth, globalThis.innerWidth);
-			scaleHeight = Math.max(scaleHeight, globalThis.innerHeight);
+			scaleWidth = Math.max(scaleWidth, viewportGeometry.stageWidth);
+			scaleHeight = Math.max(scaleHeight, largeHeight);
 		}
 		// Leave room for the pan so exact fits still move.
 		scaleWidth += getPanRange(shot.pan?.x, stage.width);
@@ -340,7 +377,7 @@ if (
 			if (shot.clearsDialogue !== false) {
 				focusHeight = Math.min(stage.height, dialogueTop);
 			}
-			placeShot(shot, stage, focusHeight);
+			placeShot(shot, stage, focusHeight, viewportGeometry.largeHeight);
 		}
 	}
 
@@ -356,7 +393,7 @@ if (
 		const panelRect = outroPanel.getBoundingClientRect();
 		const titleHeight = outroTitle.offsetHeight;
 		const centeredTop = panelRect.top + (panelRect.height - titleHeight) / 2;
-		const pinMargin = globalThis.innerHeight * OUTRO_TITLE_PIN_TOP_RATIO;
+		const pinMargin = viewportGeometry.smallHeight * OUTRO_TITLE_PIN_TOP_RATIO;
 		const pinnedTop = Math.min(
 			Math.max(centeredTop, pinMargin),
 			panelRect.bottom - titleHeight - pinMargin,
@@ -718,7 +755,7 @@ if (
 		function getDialogueProgress() {
 			const regionHeight = Math.max(
 				1,
-				dialogueRegion.offsetHeight - Math.max(1, globalThis.innerHeight),
+				dialogueRegion.offsetHeight - viewportGeometry.smallHeight,
 			);
 			return clamp(
 				-dialogueRegion.getBoundingClientRect().top / regionHeight,
@@ -768,6 +805,10 @@ if (
 		}
 
 		function updateLayout() {
+			viewportGeometry = measureViewportGeometry() ?? viewportGeometry;
+			if (!viewportGeometry) {
+				return;
+			}
 			updateDialogue();
 
 			if (motionPreference.matches) {
@@ -776,19 +817,18 @@ if (
 				return;
 			}
 
-			const viewportWidth = Math.max(1, globalThis.innerWidth);
-			const viewportHeight = Math.max(1, globalThis.innerHeight);
+			const { stageWidth, stageHeight, smallHeight } = viewportGeometry;
 			const { width: containedWidth, height: containedHeight } =
-				getHandheldSize(viewportWidth, viewportHeight);
-			const horizontalInset = Math.max(0, (viewportWidth - containedWidth) / 2);
+				getHandheldSize(stageWidth, smallHeight);
+			const horizontalInset = Math.max(0, (stageWidth - containedWidth) / 2);
 			const initialTop = clamp(
-				viewportHeight * INITIAL_STAGE_TOP_RATIO - containedHeight / 2,
+				smallHeight * INITIAL_STAGE_TOP_RATIO - containedHeight / 2,
 				0,
-				Math.max(0, viewportHeight - containedHeight),
+				Math.max(0, smallHeight - containedHeight),
 			);
 			const progress = clamp(
 				-story.getBoundingClientRect().top /
-					(BREAKOUT_DISTANCE_VIEWPORTS * viewportHeight),
+					(BREAKOUT_DISTANCE_VIEWPORTS * smallHeight),
 				0,
 				1,
 			);
@@ -807,7 +847,7 @@ if (
 			);
 			visualStage.style.setProperty(
 				"--stage-inset-bottom",
-				`${Math.max(0, viewportHeight - initialTop - containedHeight) * insetScale}px`,
+				`${Math.max(0, stageHeight - initialTop - containedHeight) * insetScale}px`,
 			);
 			visualStage.style.setProperty(
 				"--stage-inset-left",
@@ -851,20 +891,40 @@ if (
 			});
 		}
 
+		let lastReservedDialogueWidth = 0;
+
+		function handleViewportResize() {
+			const dialogueWidth = dialogueBox.getBoundingClientRect().width;
+			if (
+				Number.isFinite(dialogueWidth) &&
+				dialogueWidth > 0 &&
+				Math.abs(dialogueWidth - lastReservedDialogueWidth) >
+					DIALOGUE_WIDTH_CHANGE_THRESHOLD_PX
+			) {
+				reserveDialogueHeight();
+				lastReservedDialogueWidth = dialogueWidth;
+			}
+			scheduleLayoutUpdate();
+		}
+
 		reserveDialogueHeight();
+		lastReservedDialogueWidth = dialogueBox.getBoundingClientRect().width;
 		updateLayout();
-		globalThis.addEventListener("resize", reserveDialogueHeight);
+		globalThis.addEventListener("resize", handleViewportResize);
+		globalThis.visualViewport?.addEventListener("resize", handleViewportResize);
+		const stageResizeObserver = new ResizeObserver(handleViewportResize);
+		stageResizeObserver.observe(visualStage);
 		document.fonts
 			.load('400 16px "Pokemon DS"')
 			.catch(() => undefined)
 			.then(() => {
 				reserveDialogueHeight();
+				lastReservedDialogueWidth = dialogueBox.getBoundingClientRect().width;
 				scheduleLayoutUpdate();
 			});
 		globalThis.addEventListener("scroll", scheduleLayoutUpdate, {
 			passive: true,
 		});
-		globalThis.addEventListener("resize", scheduleLayoutUpdate);
 		motionPreference.addEventListener("change", scheduleLayoutUpdate);
 	}
 }
