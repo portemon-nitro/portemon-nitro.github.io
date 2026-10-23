@@ -15,17 +15,20 @@ const SOURCE_HEIGHT = 1440;
 const LEGENDS_NARROW_MAX_WIDTH = 699;
 const LEGENDS_DOUBLE_SCALE_MIN_WIDTH = 900;
 const STAGE_CENTER = { x: 0.5, y: 0.5 };
+const SCENE_ENTERED_CLASS = "scene--entered";
 // Story scroll positions are measured in stage heights from the story top.
+// The black fade starts as the dialogue region's end pushes the box upward;
+// the title waits until the box has scrolled off the top.
 const SCENE_FADES = [
 	{ selector: ".scene--ecutreak", start: 1.9, end: 2.1 },
-	{ selector: ".scene--celebi", start: 2.9, end: 3.1 },
-	{ selector: ".scene--legends", start: 3.9, end: 4.1 },
-	{ selector: ".scene--dragonsden", start: 5.05, end: 5.25 },
-	{ selector: ".scene-blackout", start: 6.35, end: 6.6 },
+	{ selector: ".scene--legends", start: 3.05, end: 3.25 },
+	{ selector: ".scene--dragonsden", start: 4.2, end: 4.4 },
+	{ selector: ".scene-blackout", start: 5.35, end: 5.6 },
 ];
-const OUTRO_TITLE_FADE = { start: 6.6, end: 6.85 };
-// Focus is a source pixel anchored at a stage fraction. Pan amounts are
-// min(max, ratio * stage size) CSS pixels, moved from `from` to `to` multiples.
+const OUTRO_TITLE_FADE = { start: 6.35, end: 6.6 };
+// Focus is a source pixel anchored at a stage fraction. Once a scene starts
+// fading in, CSS pans it once by min(max, ratio * stage size) CSS pixels,
+// from the `from` multiple to the `to` multiple.
 const SCENE_SHOTS = [
 	{
 		selector: ".scene--newbark img",
@@ -37,21 +40,8 @@ const SCENE_SHOTS = [
 		focus: { x: 1220, y: 690 },
 		target: STAGE_CENTER,
 		pan: {
-			start: 1.9,
-			end: 3.1,
-			x: { max: 56, ratio: 0.035, from: 1, to: -1 },
-			y: { max: 28, ratio: 0.025, from: 1, to: -1 },
-		},
-	},
-	{
-		selector: ".scene--celebi img",
-		focus: { x: 1255, y: 550 },
-		target: STAGE_CENTER,
-		pan: {
-			start: 2.9,
-			end: 4.1,
-			x: { max: 32, ratio: 0.022, from: -1, to: 1 },
-			y: { max: 90, ratio: 0.07, from: 0, to: -1 },
+			x: { max: 24, ratio: 0.015, from: 1, to: -1 },
+			y: { max: 12, ratio: 0.01, from: 1, to: -1 },
 		},
 	},
 	{
@@ -61,9 +51,7 @@ const SCENE_SHOTS = [
 		narrowTarget: { x: 0.44, y: 0.27 },
 		wideMinimumScale: 2,
 		pan: {
-			start: 3.9,
-			end: 5.25,
-			y: { max: 90, ratio: 0.08, from: -1, to: 1 },
+			y: { max: 32, ratio: 0.03, from: -1, to: 1 },
 		},
 	},
 	{
@@ -73,9 +61,7 @@ const SCENE_SHOTS = [
 		narrowTarget: { x: 0.56, y: 0.73 },
 		wideMinimumScale: 2,
 		pan: {
-			start: 3.9,
-			end: 5.25,
-			y: { max: 90, ratio: 0.08, from: 1, to: -1 },
+			y: { max: 32, ratio: 0.03, from: 1, to: -1 },
 		},
 	},
 	{
@@ -83,10 +69,8 @@ const SCENE_SHOTS = [
 		focus: { x: 1430, y: 600 },
 		target: STAGE_CENTER,
 		pan: {
-			start: 5.05,
-			end: 6.6,
-			x: { max: 64, ratio: 0.04, from: 1, to: -1 },
-			y: { max: 56, ratio: 0.05, from: 0, to: -1 },
+			x: { max: 24, ratio: 0.015, from: 1, to: -1 },
+			y: { max: 20, ratio: 0.02, from: 0, to: -1 },
 		},
 	},
 ];
@@ -166,7 +150,7 @@ if (
 
 	// Keeps the 2560x1440 screenshot at an integer scale covering the stage,
 	// anchoring its focus pixel at the target fraction without exposing edges.
-	function placeShot(shot, stage, storyProgress) {
+	function placeShot(shot, stage) {
 		let { target } = shot;
 		if (shot.narrowTarget && stage.width <= LEGENDS_NARROW_MAX_WIDTH) {
 			target = shot.narrowTarget;
@@ -179,8 +163,8 @@ if (
 			minimumScale = shot.wideMinimumScale;
 		}
 		let panProgress = 0;
-		if (shot.pan) {
-			panProgress = getFadeProgress(storyProgress, shot.pan);
+		if (shot.image.closest(`.${SCENE_ENTERED_CLASS}`)) {
+			panProgress = 1;
 		}
 
 		const scale = Math.max(
@@ -213,6 +197,10 @@ if (
 	function updateScenes(storyProgress) {
 		for (const fade of sceneFades) {
 			fade.element.style.opacity = String(getFadeProgress(storyProgress, fade));
+			fade.element.classList.toggle(
+				SCENE_ENTERED_CLASS,
+				storyProgress >= fade.start,
+			);
 		}
 		story.style.setProperty(
 			"--outro-opacity",
@@ -222,7 +210,7 @@ if (
 
 		const stage = sceneSurface.getBoundingClientRect();
 		for (const shot of sceneShots) {
-			placeShot(shot, stage, storyProgress);
+			placeShot(shot, stage);
 		}
 	}
 
@@ -231,8 +219,11 @@ if (
 		story.style.removeProperty("--outro-opacity");
 		story.style.removeProperty("--outro-panel-background");
 		const stage = sceneSurface.getBoundingClientRect();
+		for (const fade of sceneFades) {
+			fade.element.classList.remove(SCENE_ENTERED_CLASS);
+		}
 		for (const shot of sceneShots) {
-			placeShot(shot, stage, 0);
+			placeShot(shot, stage);
 		}
 	}
 
