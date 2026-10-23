@@ -854,6 +854,13 @@ if (
 		reserveDialogueHeight();
 		updateLayout();
 		globalThis.addEventListener("resize", reserveDialogueHeight);
+		document.fonts
+			.load('400 16px "Pokemon DS"')
+			.catch(() => undefined)
+			.then(() => {
+				reserveDialogueHeight();
+				scheduleLayoutUpdate();
+			});
 		globalThis.addEventListener("scroll", scheduleLayoutUpdate, {
 			passive: true,
 		});

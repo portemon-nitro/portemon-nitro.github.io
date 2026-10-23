@@ -1,0 +1,11 @@
+﻿The FontStruction “Pokémon DS Font”
+(https://fontstruct.com/fontstructions/show/1182741) by “sergalbutt” is
+licensed under a Creative Commons CC0 Public Domain Dedication license
+(http://creativecommons.org/publicdomain/zero/1.0/).
+[ancestry]
+Source and attribution
+Creator: sergalbutt
+FontStruct source: https://fontstruct.com/fontstructions/show/1182741/pokemon-ds-font
+Official download page: https://fontstruct.com/fontstructions/download/1182741
+
+FontStruct describes the design as a pixel-by-pixel recreation of the HeartGold/SoulSilver game font. The publisher identifies the creator's font as CC0; this attribution does not independently establish rights to any underlying third-party glyph artwork.
