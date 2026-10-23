@@ -128,6 +128,12 @@ ul {
 .scene:not(.scene--newbark),
 .scene-blackout {
 	opacity: 0;
+	transition: opacity 700ms ease-in-out;
+}
+
+.scene.scene--entered,
+.scene-blackout.scene--entered {
+	opacity: 1;
 }
 
 .scene-blackout {
@@ -411,6 +417,7 @@ ul {
 	color: var(--ink);
 	font-family: var(--font-site);
 	opacity: var(--outro-opacity, 1);
+	transition: opacity 900ms ease-in-out;
 }
 
 .story__outro-title h2 {
@@ -610,6 +617,10 @@ ul {
 	.story__outro {
 		height: auto;
 		margin-top: 0;
+	}
+
+	.story__outro-title {
+		transition: none;
 	}
 
 	.story__outro-panel {

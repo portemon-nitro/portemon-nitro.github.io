@@ -16,16 +16,7 @@ const LEGENDS_NARROW_MAX_WIDTH = 699;
 const LEGENDS_DOUBLE_SCALE_MIN_WIDTH = 900;
 const STAGE_CENTER = { x: 0.5, y: 0.5 };
 const SCENE_ENTERED_CLASS = "scene--entered";
-// Story scroll positions are measured in stage heights from the story top.
-// The black fade starts as the dialogue region's end pushes the box upward;
-// the title waits until the box has scrolled off the top.
-const SCENE_FADES = [
-	{ selector: ".scene--ecutreak", start: 1.9, end: 2.1 },
-	{ selector: ".scene--legends", start: 3.05, end: 3.25 },
-	{ selector: ".scene--dragonsden", start: 4.2, end: 4.4 },
-	{ selector: ".scene-blackout", start: 5.35, end: 5.6 },
-];
-const OUTRO_TITLE_FADE = { start: 6.35, end: 6.6 };
+const STICKY_TOLERANCE_PX = 1;
 // Focus is a source pixel anchored at a stage fraction. Once a scene starts
 // fading in, CSS pans it once by min(max, ratio * stage size) CSS pixels,
 // from the `from` multiple to the `to` multiple.
@@ -122,23 +113,13 @@ if (
 		return Math.min(Math.max(value, minimum), maximum);
 	}
 
-	function ease(value) {
-		const progress = clamp(value, 0, 1);
-		return progress * progress * (SMOOTHSTEP_SCALE - 2 * progress);
-	}
-
-	const sceneFades = SCENE_FADES.map((fade) => ({
-		...fade,
-		element: document.querySelector(fade.selector),
-	})).filter((fade) => fade.element instanceof HTMLElement);
+	const sceneLayers = Array.from(
+		document.querySelectorAll(".scene:not(.scene--newbark), .scene-blackout"),
+	);
 	const sceneShots = SCENE_SHOTS.map((shot) => ({
 		...shot,
 		image: document.querySelector(shot.selector),
 	})).filter((shot) => shot.image instanceof HTMLElement);
-
-	function getFadeProgress(storyProgress, range) {
-		return ease((storyProgress - range.start) / (range.end - range.start));
-	}
 
 	function getPanOffset(axis, stageSize, progress) {
 		if (!axis) {
@@ -194,18 +175,12 @@ if (
 		shot.image.style.transform = `translate3d(${left - stage.width / 2}px, ${top - stage.height / 2}px, 0) scale(${scale})`;
 	}
 
-	function updateScenes(storyProgress) {
-		for (const fade of sceneFades) {
-			fade.element.style.opacity = String(getFadeProgress(storyProgress, fade));
-			fade.element.classList.toggle(
-				SCENE_ENTERED_CLASS,
-				storyProgress >= fade.start,
-			);
-		}
-		story.style.setProperty(
-			"--outro-opacity",
-			String(getFadeProgress(storyProgress, OUTRO_TITLE_FADE)),
-		);
+	// Cues hold one boolean per layer in paint order; CSS times each fade.
+	function updateScenes(layerCues, titleCue) {
+		sceneLayers.forEach((layer, index) => {
+			layer.classList.toggle(SCENE_ENTERED_CLASS, Boolean(layerCues[index]));
+		});
+		story.style.setProperty("--outro-opacity", String(Number(titleCue)));
 		story.style.setProperty("--outro-panel-background", "transparent");
 
 		const stage = sceneSurface.getBoundingClientRect();
@@ -219,8 +194,8 @@ if (
 		story.style.removeProperty("--outro-opacity");
 		story.style.removeProperty("--outro-panel-background");
 		const stage = sceneSurface.getBoundingClientRect();
-		for (const fade of sceneFades) {
-			fade.element.classList.remove(SCENE_ENTERED_CLASS);
+		for (const layer of sceneLayers) {
+			layer.classList.remove(SCENE_ENTERED_CLASS);
 		}
 		for (const shot of sceneShots) {
 			placeShot(shot, stage);
@@ -617,8 +592,24 @@ if (
 				"--stage-inset-left",
 				`${horizontalInset * insetScale}px`,
 			);
+			updateSceneCues();
+		}
+
+		// Scenes follow the dialogue box: Ecruteak once it settles, the legends
+		// and Dragon's Den with its second and third messages, black once it
+		// starts scrolling away, and the title once it has left the screen.
+		function updateSceneCues() {
+			const dialogueBoxRect = dialogueBox.getBoundingClientRect();
+			const settledTop = Number.parseFloat(getComputedStyle(dialogueBox).top);
 			updateScenes(
-				-story.getBoundingClientRect().top / visualStage.offsetHeight,
+				[
+					dialogueBoxRect.top <= settledTop + STICKY_TOLERANCE_PX,
+					requestedDialogueState === "going-crazy" ||
+						requestedDialogueState === "recruitment",
+					requestedDialogueState === "recruitment",
+					dialogueBoxRect.top < settledTop - STICKY_TOLERANCE_PX,
+				],
+				dialogueBoxRect.bottom <= 0,
 			);
 		}
 
