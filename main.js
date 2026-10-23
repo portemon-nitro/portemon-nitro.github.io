@@ -10,21 +10,30 @@ const PAGE_GUTTER = 48;
 const BREAKOUT_DISTANCE_VIEWPORTS = 1.65;
 const INITIAL_STAGE_TOP_RATIO = 0.4;
 const SMOOTHSTEP_SCALE = 3;
-const SOURCE_WIDTH = 2560;
-const SOURCE_HEIGHT = 1440;
+// Screenshots are 512x288 game pixels captured at 5x.
+const SOURCE_PIXELS_PER_GAME_PIXEL = 5;
+const GAME_WIDTH = 512;
+const GAME_HEIGHT = 288;
+const SCALE_EPSILON = 1e-6;
 const LEGENDS_NARROW_MAX_WIDTH = 699;
-const LEGENDS_DOUBLE_SCALE_MIN_WIDTH = 900;
+const OUTRO_TITLE_PIN_TOP_RATIO = 0.08;
 const STAGE_CENTER = { x: 0.5, y: 0.5 };
+const FULL_STAGE = { left: 0, top: 0, right: 1, bottom: 1 };
 const SCENE_ENTERED_CLASS = "scene--entered";
 const STICKY_TOLERANCE_PX = 1;
-// Focus is a source pixel anchored at a stage fraction. Once a scene starts
-// fading in, CSS pans it once by min(max, ratio * stage size) CSS pixels,
-// from the `from` multiple to the `to` multiple.
+// Focus is a source pixel anchored at a target fraction of the stage width and
+// of the height above the dialogue box. The image always covers `region`, a
+// stage fraction matching each legend's CSS mask. New Bark takes its scale
+// from the viewport so it stays still while the handheld frame expands. Once a scene starts fading
+// in, CSS pans it once by min(max, ratio * stage size) CSS pixels, from the
+// `from` multiple to the `to` multiple.
 const SCENE_SHOTS = [
 	{
 		selector: ".scene--newbark img",
 		focus: { x: 1230, y: 700 },
 		target: STAGE_CENTER,
+		clearsDialogue: false,
+		scalesWithViewport: true,
 	},
 	{
 		selector: ".scene--ecutreak img",
@@ -37,20 +46,21 @@ const SCENE_SHOTS = [
 	},
 	{
 		selector: ".legend--hooh img",
-		focus: { x: 1280, y: 625 },
-		target: { x: 0.31, y: 0.32 },
-		narrowTarget: { x: 0.44, y: 0.27 },
-		wideMinimumScale: 2,
+		focus: { x: 1280, y: 600 },
+		target: { x: 0.3, y: 0.5 },
+		region: { left: 0, top: 0, right: 0.65, bottom: 1 },
+		narrowTarget: { x: 0.5, y: 0.3 },
+		narrowRegion: { left: 0, top: 0, right: 1, bottom: 0.5 },
 		pan: {
 			y: { max: 32, ratio: 0.03, from: -1, to: 1 },
 		},
 	},
 	{
 		selector: ".legend--lugia img",
-		focus: { x: 1280, y: 675 },
-		target: { x: 0.69, y: 0.68 },
-		narrowTarget: { x: 0.56, y: 0.73 },
-		wideMinimumScale: 2,
+		focus: { x: 1255, y: 680 },
+		target: { x: 0.7, y: 0.5 },
+		region: { left: 0.35, top: 0, right: 1, bottom: 1 },
+		narrowTarget: { x: 0.5, y: 0.75 },
 		pan: {
 			y: { max: 32, ratio: 0.03, from: 1, to: -1 },
 		},
@@ -89,6 +99,8 @@ const FAVICON_FRAME_INTERVAL_MS = 300;
 const story = document.querySelector(".story");
 const visualStage = document.querySelector(".story__visual");
 const sceneSurface = document.querySelector(".scene-surface");
+const outroPanel = document.querySelector(".story__outro-panel");
+const outroTitle = document.querySelector(".story__outro-title");
 const dialogueRegion = document.querySelector(".story__dialogue-region");
 const dialogueBox = document.querySelector(".dialogue-box");
 const dialogueVisual = document.querySelector(".dialogue-box__visual");
@@ -129,77 +141,130 @@ if (
 		return amount * (axis.from + (axis.to - axis.from) * progress);
 	}
 
-	// Keeps the 2560x1440 screenshot at an integer scale covering the stage,
-	// anchoring its focus pixel at the target fraction without exposing edges.
-	function placeShot(shot, stage) {
+	// Places an image edge on the device-pixel grid within [minimum, maximum].
+	function snapEdge(value, minimum, maximum, pixelRatio) {
+		return (
+			Math.min(
+				Math.floor(maximum * pixelRatio),
+				Math.max(
+					Math.ceil(minimum * pixelRatio),
+					Math.round(value * pixelRatio),
+				),
+			) / pixelRatio
+		);
+	}
+
+	// Scales the screenshot down as far as it can while still covering its
+	// region, keeping every game pixel a whole number of device pixels.
+	function placeShot(shot, stage, focusHeight) {
+		const narrow = stage.width <= LEGENDS_NARROW_MAX_WIDTH;
 		let { target } = shot;
-		if (shot.narrowTarget && stage.width <= LEGENDS_NARROW_MAX_WIDTH) {
+		if (narrow && shot.narrowTarget) {
 			target = shot.narrowTarget;
 		}
-		let minimumScale = 1;
-		if (
-			shot.wideMinimumScale &&
-			stage.width >= LEGENDS_DOUBLE_SCALE_MIN_WIDTH
-		) {
-			minimumScale = shot.wideMinimumScale;
+		let region = shot.region ?? FULL_STAGE;
+		if (narrow) {
+			region = shot.narrowRegion ?? FULL_STAGE;
 		}
 		let panProgress = 0;
 		if (shot.image.closest(`.${SCENE_ENTERED_CLASS}`)) {
 			panProgress = 1;
 		}
 
-		const scale = Math.max(
-			minimumScale,
+		const pixelRatio = globalThis.devicePixelRatio || 1;
+		const regionLeft = region.left * stage.width;
+		const regionRight = region.right * stage.width;
+		const regionTop = region.top * stage.height;
+		const regionBottom = region.bottom * stage.height;
+		let scaleWidth = regionRight - regionLeft;
+		let scaleHeight = regionBottom - regionTop;
+		if (shot.scalesWithViewport) {
+			scaleWidth = Math.max(scaleWidth, globalThis.innerWidth);
+			scaleHeight = Math.max(scaleHeight, globalThis.innerHeight);
+		}
+		const devicePixelsPerGamePixel = Math.max(
+			1,
 			Math.ceil(
-				Math.max(stage.width / SOURCE_WIDTH, stage.height / SOURCE_HEIGHT),
+				Math.max(scaleWidth / GAME_WIDTH, scaleHeight / GAME_HEIGHT) *
+					pixelRatio -
+					SCALE_EPSILON,
 			),
 		);
-		const left = clamp(
-			Math.round(
-				stage.width * target.x -
-					scale * shot.focus.x +
-					getPanOffset(shot.pan?.x, stage.width, panProgress),
-			),
-			stage.width - SOURCE_WIDTH * scale,
-			0,
+		const scale =
+			devicePixelsPerGamePixel / (SOURCE_PIXELS_PER_GAME_PIXEL * pixelRatio);
+		const width = GAME_WIDTH * SOURCE_PIXELS_PER_GAME_PIXEL * scale;
+		const height = GAME_HEIGHT * SOURCE_PIXELS_PER_GAME_PIXEL * scale;
+		const left = snapEdge(
+			stage.width * target.x -
+				scale * shot.focus.x +
+				getPanOffset(shot.pan?.x, stage.width, panProgress),
+			regionRight - width,
+			regionLeft,
+			pixelRatio,
 		);
-		const top = clamp(
-			Math.round(
-				stage.height * target.y -
-					scale * shot.focus.y +
-					getPanOffset(shot.pan?.y, stage.height, panProgress),
-			),
-			stage.height - SOURCE_HEIGHT * scale,
-			0,
+		const top = snapEdge(
+			focusHeight * target.y -
+				scale * shot.focus.y +
+				getPanOffset(shot.pan?.y, stage.height, panProgress),
+			regionBottom - height,
+			regionTop,
+			pixelRatio,
 		);
 		shot.image.style.transform = `translate3d(${left - stage.width / 2}px, ${top - stage.height / 2}px, 0) scale(${scale})`;
 	}
 
+	function placeShots(dialogueTop) {
+		const stage = sceneSurface.getBoundingClientRect();
+		for (const shot of sceneShots) {
+			let focusHeight = stage.height;
+			if (shot.clearsDialogue !== false) {
+				focusHeight = Math.min(stage.height, dialogueTop);
+			}
+			placeShot(shot, stage, focusHeight);
+		}
+	}
+
+	// Keeps the title centered on the stage until the stage scrolls away, then
+	// pins it near the top until the stage's black bottom edge pushes it out.
+	function placeOutroTitle() {
+		if (
+			!(outroPanel instanceof HTMLElement && outroTitle instanceof HTMLElement)
+		) {
+			return;
+		}
+		const panelRect = outroPanel.getBoundingClientRect();
+		const titleHeight = outroTitle.offsetHeight;
+		const centeredTop = panelRect.top + (panelRect.height - titleHeight) / 2;
+		const pinnedTop = Math.min(
+			Math.max(centeredTop, globalThis.innerHeight * OUTRO_TITLE_PIN_TOP_RATIO),
+			panelRect.bottom - titleHeight,
+		);
+		story.style.setProperty(
+			"--outro-title-shift",
+			`${pinnedTop - centeredTop}px`,
+		);
+	}
+
 	// Cues hold one boolean per layer in paint order; CSS times each fade.
-	function updateScenes(layerCues, titleCue) {
+	function updateScenes(layerCues, titleCue, dialogueTop) {
 		sceneLayers.forEach((layer, index) => {
 			layer.classList.toggle(SCENE_ENTERED_CLASS, Boolean(layerCues[index]));
 		});
 		story.style.setProperty("--outro-opacity", String(Number(titleCue)));
 		story.style.setProperty("--outro-panel-background", "transparent");
-
-		const stage = sceneSurface.getBoundingClientRect();
-		for (const shot of sceneShots) {
-			placeShot(shot, stage);
-		}
+		placeShots(dialogueTop);
+		placeOutroTitle();
 	}
 
 	// Reduced motion keeps only the CSS-pinned New Bark hero and a static outro.
 	function updateStaticScene() {
 		story.style.removeProperty("--outro-opacity");
 		story.style.removeProperty("--outro-panel-background");
-		const stage = sceneSurface.getBoundingClientRect();
+		story.style.removeProperty("--outro-title-shift");
 		for (const layer of sceneLayers) {
 			layer.classList.remove(SCENE_ENTERED_CLASS);
 		}
-		for (const shot of sceneShots) {
-			placeShot(shot, stage);
-		}
+		placeShots(Number.POSITIVE_INFINITY);
 	}
 
 	function wait(duration) {
@@ -597,19 +662,23 @@ if (
 
 		// Scenes follow the dialogue box: Ecruteak once it settles, the legends
 		// and Dragon's Den with its second and third messages, black once it
-		// starts scrolling away, and the title once it has left the screen.
+		// starts scrolling away, and the title once it has passed above it.
 		function updateSceneCues() {
 			const dialogueBoxRect = dialogueBox.getBoundingClientRect();
 			const settledTop = Number.parseFloat(getComputedStyle(dialogueBox).top);
+			const titleTop = outroTitle?.getBoundingClientRect().top ?? 0;
+			const dialogueLeaving =
+				dialogueBoxRect.top < settledTop - STICKY_TOLERANCE_PX;
 			updateScenes(
 				[
 					dialogueBoxRect.top <= settledTop + STICKY_TOLERANCE_PX,
 					requestedDialogueState === "going-crazy" ||
 						requestedDialogueState === "recruitment",
 					requestedDialogueState === "recruitment",
-					dialogueBoxRect.top < settledTop - STICKY_TOLERANCE_PX,
+					dialogueLeaving,
 				],
-				dialogueBoxRect.bottom <= 0,
+				dialogueLeaving && dialogueBoxRect.bottom <= titleTop,
+				settledTop,
 			);
 		}
 
