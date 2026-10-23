@@ -23,7 +23,7 @@
   <body>
     <main>
       <section class="story" aria-label="portemon story">
-        <div class="story__visual" aria-hidden="true">
+        <div class="story__visual">
           <div class="scene-surface">
             <div class="scene scene--newbark">
               <img src="/assets/newbark.png" width="2560" height="1440" alt="" />
@@ -45,9 +45,14 @@
             <div class="scene-blackout"></div>
           </div>
           <div class="device-frame"></div>
+          <button
+            aria-label="Continue to the next story beat"
+            class="story__advance"
+            type="button"
+          ></button>
         </div>
-
         <div class="story__beats">
+          <span aria-hidden="true" class="story__breakout-snap"></span>
           <section class="story__beat story__beat--intro" aria-labelledby="intro-title">
             <h1 class="intro-copy" id="intro-title">
               <span class="intro-copy__games">
@@ -64,6 +69,8 @@
           <section class="story__beat story__beat--payoff" aria-labelledby="payoff-title">
             <h2 class="payoff-copy" id="payoff-title">...like you've <em>never</em> seen before.</h2>
           </section>
+
+          <div class="story__dialogue-gap" aria-hidden="true"></div>
 
           <section class="story__dialogue-region" aria-label="Project dialogue">
             <article class="dialogue-box">
@@ -99,7 +106,7 @@
                   <h2 id="recruitment-title">BUT FIRST WE HAVE TO SHIP THE THING!</h2>
                   <p />
                   <p>Contributors wanted in many areas!</p>
-                  <p>Open alpha coming soon™</p>
+                  <p>Open alpha coming soon™.</p>
                 </section>
               </div>
               <div class="dialogue-box__visual" aria-hidden="true">
@@ -111,13 +118,16 @@
             <span aria-hidden="true" class="story__dialogue-snap" data-dialogue-snap="planned-features"></span>
             <span aria-hidden="true" class="story__dialogue-snap" data-dialogue-snap="going-crazy"></span>
             <span aria-hidden="true" class="story__dialogue-snap" data-dialogue-snap="recruitment"></span>
+            <span aria-hidden="true" class="story__dialogue-snap" data-dialogue-snap="legends-middle"></span>
+            <span aria-hidden="true" class="story__dialogue-snap" data-dialogue-snap="dragons-den-middle"></span>
           </section>
 
           <section class="story__outro" aria-label="Coming soon">
+            <span aria-hidden="true" class="story__outro-snap"></span>
             <div class="story__outro-panel">
               <div class="story__outro-title">
                 <h2>Portémon Nitro</h2>
-                <p>A full <abbr class="game-tag game-tag--hg" title="HeartGold">HG</abbr><abbr class="game-tag game-tag--ss" title="SoulSilver">SS</abbr> port to PC and Mobile</p>
+                <p>A full port of <abbr class="game-tag game-tag--hg" title="HeartGold">HG</abbr><abbr class="game-tag game-tag--ss" title="SoulSilver">SS</abbr> to PC and Mobile</p>
               </div>
             </div>
           </section>

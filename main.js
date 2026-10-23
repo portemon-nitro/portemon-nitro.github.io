@@ -26,6 +26,8 @@ const SCENE_ENTERED_CLASS = "scene--entered";
 const STICKY_TOLERANCE_PX = 1;
 const DIALOGUE_WIDTH_CHANGE_THRESHOLD_PX = 0.5;
 const PAN_DURATION_MS = 9000;
+const BREAKOUT_ADVANCE_DURATION_MS = 3000;
+const BOTTOM_ADVANCE_DURATION_MS = 1500;
 // Focus is a source pixel anchored at a target fraction of the stage width and
 // of the height above the dialogue box. The image always covers `region`, a
 // stage fraction matching each legend's CSS mask; an `aboveDialogue` region
@@ -64,7 +66,7 @@ const SCENE_SHOTS = [
 			aboveDialogue: true,
 		},
 		pan: {
-			y: { max: 32, ratio: 0.03, from: -1, to: 1 },
+			y: { max: 26, ratio: 0.025, from: -1, to: 1 },
 		},
 	},
 	{
@@ -74,7 +76,7 @@ const SCENE_SHOTS = [
 		region: { left: 0.35, top: 0, right: 1, bottom: 1 },
 		narrowTarget: { x: 0.5, y: 0.75 },
 		pan: {
-			y: { max: 32, ratio: 0.03, from: 1, to: -1 },
+			y: { max: 26, ratio: 0.025, from: 1, to: -1 },
 		},
 	},
 	{
@@ -120,6 +122,7 @@ const outroPanel = document.querySelector(".story__outro-panel");
 const outroTitle = document.querySelector(".story__outro-title");
 const dialogueRegion = document.querySelector(".story__dialogue-region");
 const dialogueBox = document.querySelector(".dialogue-box");
+const storyAdvanceButton = document.querySelector(".story__advance");
 const dialogueVisual = document.querySelector(".dialogue-box__visual");
 const dialogueVisualHeading = document.querySelector(
 	".dialogue-box__visual-heading",
@@ -129,6 +132,108 @@ const dialogueVisualNote = document.querySelector(".dialogue-box__visual-note");
 const semanticMessages = Array.from(
 	document.querySelectorAll("[data-dialogue-message]"),
 ).filter((message) => message instanceof HTMLElement);
+
+const storyAdvanceTargets = [
+	".story__breakout-snap",
+	'[data-dialogue-snap="planned-features"]',
+	'[data-dialogue-snap="legends-middle"]',
+	'[data-dialogue-snap="dragons-den-middle"]',
+	".story__outro-snap",
+].flatMap((selector) => Array.from(document.querySelectorAll(selector)));
+const breakoutAdvanceTarget = document.querySelector(".story__breakout-snap");
+let slowScrollFrame = 0;
+
+function cancelSlowScroll() {
+	if (slowScrollFrame !== 0) {
+		globalThis.cancelAnimationFrame(slowScrollFrame);
+		slowScrollFrame = 0;
+	}
+	document.documentElement.classList.remove("story--slow-scroll");
+}
+
+function scrollSlowlyTo(targetTop, duration) {
+	cancelSlowScroll();
+	document.documentElement.classList.add("story--slow-scroll");
+	const startTop = globalThis.scrollY;
+	const startTime = globalThis.performance.now();
+
+	function step(now) {
+		const progress = Math.min(
+			1,
+			(now - startTime) / duration,
+		);
+		const easedProgress = 1 - (1 - progress) ** 3;
+		globalThis.scrollTo({
+			top: startTop + (targetTop - startTop) * easedProgress,
+			behavior: "instant",
+		});
+
+		if (progress < 1) {
+			slowScrollFrame = globalThis.requestAnimationFrame(step);
+		} else {
+			slowScrollFrame = 0;
+			document.documentElement.classList.remove("story--slow-scroll");
+		}
+	}
+
+	slowScrollFrame = globalThis.requestAnimationFrame(step);
+}
+
+globalThis.addEventListener("wheel", cancelSlowScroll, { passive: true });
+globalThis.addEventListener("touchstart", cancelSlowScroll, { passive: true });
+globalThis.addEventListener("pointerdown", cancelSlowScroll, { passive: true });
+globalThis.addEventListener("keydown", cancelSlowScroll);
+
+function advanceStory() {
+	const scrollTop = globalThis.scrollY;
+	const nextTarget = storyAdvanceTargets
+		.map((element) => ({
+			element,
+			top: element.getBoundingClientRect().top + scrollTop,
+		}))
+		.filter(({ top }) => top > scrollTop + 1)
+		.sort((first, second) => first.top - second.top)[0];
+	const pageBottom = Math.max(
+		0,
+		document.documentElement.scrollHeight - globalThis.innerHeight,
+	);
+	const destination = Math.min(nextTarget?.top ?? pageBottom, pageBottom);
+	if (
+		nextTarget?.element === breakoutAdvanceTarget &&
+		!globalThis.matchMedia(REDUCED_MOTION_QUERY).matches
+	) {
+		scrollSlowlyTo(destination, BREAKOUT_ADVANCE_DURATION_MS);
+		return;
+	}
+	if (!nextTarget && !globalThis.matchMedia(REDUCED_MOTION_QUERY).matches) {
+		scrollSlowlyTo(destination, BOTTOM_ADVANCE_DURATION_MS);
+		return;
+	}
+	cancelSlowScroll();
+	globalThis.scrollTo({
+		top: destination,
+		behavior: globalThis.matchMedia(REDUCED_MOTION_QUERY).matches
+			? "auto"
+			: "smooth",
+	});
+}
+
+if (storyAdvanceButton instanceof HTMLButtonElement) {
+	storyAdvanceButton.addEventListener("click", advanceStory);
+}
+
+if (dialogueBox instanceof HTMLElement) {
+	dialogueBox.addEventListener("click", (event) => {
+		if (
+			event.target instanceof Element &&
+			event.target.closest("a, button")
+		) {
+			return;
+		}
+
+		advanceStory();
+	});
+}
 
 if (
 	story instanceof HTMLElement &&
@@ -560,6 +665,17 @@ if (
 			["planned-features", 0],
 			["going-crazy", DIALOGUE_CRAZY_ENTER_THRESHOLD],
 			["recruitment", DIALOGUE_RECRUITMENT_ENTER_THRESHOLD],
+			[
+				"legends-middle",
+				(DIALOGUE_CRAZY_ENTER_THRESHOLD +
+					DIALOGUE_RECRUITMENT_ENTER_THRESHOLD) /
+					2,
+			],
+			[
+				"dragons-den-middle",
+				(DIALOGUE_RECRUITMENT_ENTER_THRESHOLD + DIALOGUE_FADE_THRESHOLD) /
+					2,
+			],
 		]);
 		let requestedDialogueState = "empty";
 		let displayedDialogueText = "";
@@ -826,6 +942,8 @@ if (
 
 			if (motionPreference.matches) {
 				dialogueBox.classList.remove(DIALOGUE_FADED_CLASS);
+				dialogueBox.style.removeProperty("--dialogue-fade-top");
+				dialogueBox.style.removeProperty("--dialogue-fade-left");
 				updateStaticScene();
 				return;
 			}
@@ -900,7 +1018,24 @@ if (
 		function updateSceneCues() {
 			const dialogueBoxRect = dialogueBox.getBoundingClientRect();
 			const settledTop = Number.parseFloat(getComputedStyle(dialogueBox).top);
-			const dialogueFaded = getDialogueProgress() >= DIALOGUE_FADE_THRESHOLD;
+			const dialogueProgress = getDialogueProgress();
+			const dialogueFaded = dialogueProgress >= DIALOGUE_FADE_THRESHOLD;
+			if (
+				dialogueFaded &&
+				!dialogueBox.classList.contains(DIALOGUE_FADED_CLASS)
+			) {
+				dialogueBox.style.setProperty(
+					"--dialogue-fade-top",
+					`${dialogueBoxRect.top}px`,
+				);
+				dialogueBox.style.setProperty(
+					"--dialogue-fade-left",
+					`${dialogueBoxRect.left}px`,
+				);
+			} else if (!dialogueFaded) {
+				dialogueBox.style.removeProperty("--dialogue-fade-top");
+				dialogueBox.style.removeProperty("--dialogue-fade-left");
+			}
 			dialogueBox.classList.toggle(DIALOGUE_FADED_CLASS, dialogueFaded);
 			return updateScenes(
 				[
@@ -910,7 +1045,8 @@ if (
 					requestedDialogueState === "recruitment",
 					dialogueFaded,
 				],
-				dialogueBoxRect.top < settledTop - STICKY_TOLERANCE_PX,
+				dialogueBoxRect.top < settledTop - STICKY_TOLERANCE_PX ||
+					dialogueProgress >= 1,
 				settledTop,
 			);
 		}

@@ -35,12 +35,12 @@
 	--ink: rgb(245 237 223);
 	--muted-ink: rgb(199 188 170);
 	--soft-ink: rgb(153 143 128);
-	--dialogue-outer: rgb(26 24 21);
-	--dialogue-trim: rgb(176 140 92);
-	--dialogue-separator: rgb(41 36 31);
+	--dialogue-outer: rgb(68 61 59);
+	--dialogue-trim: rgb(242 207 117);
+	--dialogue-separator: rgb(67 63 62);
 	--dialogue-accent: rgb(133 148 158);
-	--dialogue-highlight: rgb(214 222 227);
-	--dialogue-surface: rgb(247 242 231);
+	--dialogue-highlight: rgb(174 178 190);
+	--dialogue-surface: rgb(253 250 241);
 	--dialogue-text: rgb(90 90 82);
 	--dialogue-shadow: rgb(173 189 189);
 	--focus: rgb(232 201 143);
@@ -56,6 +56,10 @@ html {
 	background: var(--page-background);
 	scroll-behavior: smooth;
 	scroll-snap-type: y proximity;
+}
+
+html.story--slow-scroll {
+	scroll-snap-type: none;
 }
 
 body {
@@ -107,8 +111,24 @@ ul {
 	top: 0;
 	height: 100svh;
 	overflow: hidden;
-	pointer-events: none;
+	pointer-events: auto;
 	isolation: isolate;
+}
+
+.story__advance {
+	position: absolute;
+	z-index: 3;
+	inset: 0;
+	width: 100%;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	appearance: none;
+	cursor: pointer;
+}
+
+.story__advance:focus-visible {
+	outline: none;
 }
 
 .viewport-height-probe {
@@ -204,6 +224,17 @@ ul {
 	position: relative;
 	z-index: 1;
 	margin-top: -100svh;
+	pointer-events: none;
+}
+
+.story__breakout-snap {
+	position: absolute;
+	top: 105svh;
+	left: 0;
+	width: 1px;
+	height: 1px;
+	pointer-events: none;
+	scroll-snap-align: start;
 }
 
 .story__beat {
@@ -216,6 +247,10 @@ ul {
 .story__beat--intro,
 .story__beat--payoff {
 	scroll-snap-align: start;
+}
+
+.story__beat--payoff {
+	scroll-snap-align: none;
 }
 
 .story__beat--intro {
@@ -290,20 +325,21 @@ ul {
 	letter-spacing: 0;
 	line-height: 1.2;
 	text-align: center;
-	text-shadow: 0 2px 5px rgb(0 0 0 / 55%);
 }
 
 .payoff-copy::before {
 	position: absolute;
-	inset: -0.45em -0.6em;
+	inset: -1.2em -2em;
 	z-index: -1;
 	border-radius: 50%;
 	background: radial-gradient(
 		ellipse at center,
-		rgb(17 16 14 / 96%) 0%,
-		rgb(17 16 14 / 82%) 48%,
+		rgb(17 16 14 / 72%) 0%,
+		rgb(17 16 14 / 38%) 45%,
+		rgb(17 16 14 / 14%) 75%,
 		rgb(17 16 14 / 0%) 100%
 	);
+	filter: blur(1.5rem);
 	content: "";
 	pointer-events: none;
 }
@@ -311,6 +347,10 @@ ul {
 .payoff-copy em {
 	font-style: normal;
 	font-weight: 700;
+}
+
+.story__dialogue-gap {
+	height: 35svh;
 }
 
 .game-tag {
@@ -361,6 +401,9 @@ ul {
 }
 
 .dialogue-box {
+	cursor: pointer;
+	pointer-events: auto;
+	--dialogue-accent: rgb(117 127 137);
 	position: sticky;
 	top: calc(100svh - var(--dialogue-height) - var(--dialogue-bottom));
 	width: min(90vw, 42.5rem);
@@ -368,20 +411,24 @@ ul {
 	margin: 0 auto;
 	padding: calc(10px + clamp(0.5rem, 1.4vw, 0.75rem))
 		calc(10px + clamp(0.9rem, 2vw, 1.25rem));
-	border: 2px solid var(--dialogue-outer);
+	border: 3px solid var(--dialogue-outer);
 	border-radius: 6px;
 	background: var(--dialogue-surface);
 	box-shadow:
+		inset 0 -3px 4px rgb(0 0 0 / 20%),
 		inset 0 0 0 2px var(--dialogue-trim),
 		inset 0 0 0 4px var(--dialogue-separator),
-		inset 0 0 0 6px var(--dialogue-accent),
-		inset 0 0 0 8px var(--dialogue-highlight),
-		4px 4px 0 var(--dialogue-outer);
+		inset 0 0 0 7px var(--dialogue-accent),
+		inset 0 0 0 10px var(--dialogue-highlight);
 	color: var(--dialogue-text);
 	transition: opacity 700ms ease-in-out;
 }
 
 .dialogue-box--faded {
+	position: fixed;
+	top: var(--dialogue-fade-top);
+	left: var(--dialogue-fade-left);
+	margin: 0;
 	opacity: 0;
 	pointer-events: none;
 }
@@ -404,25 +451,25 @@ ul {
 .dialogue-box__visual {
 	display: flex;
 	flex-direction: column;
-	gap: 0.4em;
+	gap: 0.08em;
 	overflow-wrap: anywhere;
 	color: var(--dialogue-text);
 	font-family: var(--font-dialogue);
-	font-size: 16px;
-	font-weight: 400;
+	font-size: clamp(22px, calc(2.2vw + 10px), 28px);
+	font-weight: 600;
 	font-style: normal;
-	font-synthesis: none;
+	font-synthesis: weight;
 	font-kerning: none;
 	font-variant-ligatures: none;
-	letter-spacing: 0;
-	line-height: 1.25;
-	text-shadow: 1px 1px 0 var(--dialogue-shadow);
+	letter-spacing: 0.01em;
+	line-height: 0.9;
+	text-shadow: 1px 0 0 var(--dialogue-shadow);
 }
 
 .dialogue-box__visual-heading {
 	white-space: pre-wrap;
-	font-size: 18px;
-	font-weight: 400;
+	font-size: clamp(24px, calc(2.2vw + 14px), 32px);
+	font-weight: 600;
 }
 
 .dialogue-box__visual-body {
@@ -434,8 +481,8 @@ ul {
 	grid-auto-flow: column;
 	grid-template-columns: 1fr 1fr;
 	grid-template-rows: repeat(var(--dialogue-list-rows, 1), auto);
-	column-gap: 1.25rem;
-	row-gap: 0.15em;
+	column-gap: 0.6rem;
+	row-gap: 0;
 }
 
 .dialogue-box__visual-note {
@@ -458,6 +505,17 @@ ul {
 	position: relative;
 	height: 160svh;
 	margin-top: -100svh;
+}
+
+.story__outro-snap {
+	position: absolute;
+	/* Give the dialogue fade time to reach black before the title beat. */
+	top: 25%;
+	left: 0;
+	width: 1px;
+	height: 1px;
+	pointer-events: none;
+	scroll-snap-align: start;
 }
 
 .story__outro-panel {
