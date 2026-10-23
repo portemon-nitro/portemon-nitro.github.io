@@ -7,7 +7,7 @@ globalThis.scrollTo(0, 0);
 const HANDHELD_WIDTH = 256;
 const HANDHELD_HEIGHT = 192;
 const PAGE_GUTTER = 48;
-const BREAKOUT_DISTANCE_VIEWPORTS = 1.65;
+const BREAKOUT_DISTANCE_VIEWPORTS = 1.05;
 const INITIAL_STAGE_TOP_RATIO = 0.5;
 // The handheld frame shows this many game pixels across, at the shot's scale.
 const HANDHELD_GAME_PIXELS_WIDE = 192;
@@ -93,6 +93,7 @@ const DIALOGUE_CRAZY_ENTER_THRESHOLD = 0.35;
 const DIALOGUE_CRAZY_EXIT_THRESHOLD = 0.25;
 const DIALOGUE_RECRUITMENT_ENTER_THRESHOLD = 0.7;
 const DIALOGUE_RECRUITMENT_EXIT_THRESHOLD = 0.6;
+const DIALOGUE_SNAP_POSITION_THRESHOLD_PX = 0.5;
 // The box fades to black with the scenes while still pinned, before the end
 // of its region would scroll it away.
 const DIALOGUE_FADE_THRESHOLD = 0.9;
@@ -552,6 +553,14 @@ if (
 					getMessageBody(message),
 			]),
 		);
+		const dialogueSnapTargets = Array.from(
+			dialogueRegion.querySelectorAll("[data-dialogue-snap]"),
+		);
+		const dialogueSnapProgressByState = new Map([
+			["planned-features", 0],
+			["going-crazy", DIALOGUE_CRAZY_ENTER_THRESHOLD],
+			["recruitment", DIALOGUE_RECRUITMENT_ENTER_THRESHOLD],
+		]);
 		let requestedDialogueState = "empty";
 		let displayedDialogueText = "";
 		let dialogueOperationActive = false;
@@ -773,7 +782,6 @@ if (
 				dialogueBoxRect.bottom > 0
 			) {
 				dialogueStarted = true;
-				requestDialogueState("planned-features");
 			}
 
 			if (!dialogueStarted) {
@@ -781,27 +789,31 @@ if (
 			}
 
 			const dialogueProgress = getDialogueProgress();
-			if (
-				requestedDialogueState === "planned-features" &&
-				dialogueProgress >= DIALOGUE_CRAZY_ENTER_THRESHOLD
-			) {
-				requestDialogueState("going-crazy");
-			} else if (
-				requestedDialogueState === "going-crazy" &&
-				dialogueProgress >= DIALOGUE_RECRUITMENT_ENTER_THRESHOLD
-			) {
-				requestDialogueState("recruitment");
-			} else if (
-				requestedDialogueState === "going-crazy" &&
-				dialogueProgress < DIALOGUE_CRAZY_EXIT_THRESHOLD
-			) {
-				requestDialogueState("planned-features");
-			} else if (
-				requestedDialogueState === "recruitment" &&
-				dialogueProgress < DIALOGUE_RECRUITMENT_EXIT_THRESHOLD
-			) {
-				requestDialogueState("going-crazy");
+			let currentState = requestedDialogueState;
+			if (currentState === "empty") {
+				currentState = "planned-features";
 			}
+			requestDialogueState(
+				getNextDialogueState(dialogueProgress, currentState),
+			);
+		}
+
+		function getNextDialogueState(progress, currentState) {
+			if (
+				progress >= DIALOGUE_RECRUITMENT_ENTER_THRESHOLD ||
+				(currentState === "recruitment" &&
+					progress >= DIALOGUE_RECRUITMENT_EXIT_THRESHOLD)
+			) {
+				return "recruitment";
+			}
+			if (
+				progress >= DIALOGUE_CRAZY_ENTER_THRESHOLD ||
+				((currentState === "going-crazy" || currentState === "recruitment") &&
+					progress >= DIALOGUE_CRAZY_EXIT_THRESHOLD)
+			) {
+				return "going-crazy";
+			}
+			return "planned-features";
 		}
 
 		function updateLayout() {
@@ -809,6 +821,7 @@ if (
 			if (!viewportGeometry) {
 				return;
 			}
+			positionDialogueSnapTargets();
 			updateDialogue();
 
 			if (motionPreference.matches) {
@@ -855,6 +868,28 @@ if (
 			);
 			if (updateSceneCues()) {
 				scheduleLayoutUpdate();
+			}
+		}
+
+		function positionDialogueSnapTargets() {
+			const dialogueTravel = Math.max(
+				1,
+				dialogueRegion.offsetHeight - viewportGeometry.smallHeight,
+			);
+			for (const target of dialogueSnapTargets) {
+				const progress = dialogueSnapProgressByState.get(
+					target.dataset.dialogueSnap,
+				);
+				if (progress !== undefined) {
+					const top = progress * dialogueTravel;
+					const currentTop = Number.parseFloat(target.style.top);
+					if (
+						!Number.isFinite(currentTop) ||
+						Math.abs(currentTop - top) > DIALOGUE_SNAP_POSITION_THRESHOLD_PX
+					) {
+						target.style.top = `${top}px`;
+					}
+				}
 			}
 		}
 

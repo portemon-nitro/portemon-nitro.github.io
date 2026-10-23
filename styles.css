@@ -55,6 +55,7 @@
 html {
 	background: var(--page-background);
 	scroll-behavior: smooth;
+	scroll-snap-type: y proximity;
 }
 
 body {
@@ -208,8 +209,13 @@ ul {
 .story__beat {
 	display: grid;
 	position: relative;
-	min-height: 100svh;
+	min-height: 75svh;
 	padding: clamp(1.25rem, 4vw, 4rem);
+}
+
+.story__beat--intro,
+.story__beat--payoff {
+	scroll-snap-align: start;
 }
 
 .story__beat--intro {
@@ -262,7 +268,7 @@ ul {
 }
 
 .story__breakout-gap {
-	height: 35svh;
+	height: 16svh;
 }
 
 .story__beat--payoff {
@@ -339,10 +345,19 @@ ul {
 		calc(1rem + env(safe-area-inset-bottom, 0px))
 	);
 	position: relative;
-	min-height: 400svh;
+	min-height: 260svh;
 	padding: 0 clamp(1rem, 5vw, 3rem);
-	padding-top: 45svh;
+	padding-top: 35svh;
 	padding-bottom: var(--dialogue-bottom);
+}
+
+.story__dialogue-snap {
+	position: absolute;
+	left: 0;
+	width: 1px;
+	height: 1px;
+	pointer-events: none;
+	scroll-snap-align: start;
 }
 
 .dialogue-box {
@@ -441,7 +456,7 @@ ul {
    as the dialogue box begins scrolling away. */
 .story__outro {
 	position: relative;
-	height: 200svh;
+	height: 160svh;
 	margin-top: -100svh;
 }
 
@@ -652,9 +667,9 @@ ul {
 			1.5rem,
 			calc(1rem + env(safe-area-inset-bottom, 0px))
 		);
-		min-height: 400svh;
+		min-height: 260svh;
 		padding-inline: 0.75rem;
-		padding-top: 35svh;
+		padding-top: 28svh;
 	}
 
 	.dialogue-box {
@@ -692,6 +707,7 @@ ul {
 @media (prefers-reduced-motion: reduce) {
 	html {
 		scroll-behavior: auto;
+		scroll-snap-type: none;
 	}
 
 	.story__visual {
