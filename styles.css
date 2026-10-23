@@ -158,10 +158,6 @@ ul {
 }
 
 /* Entered scenes drift once to their pan end, independent of scroll speed. */
-.scene--entered img {
-	transition: transform 9s cubic-bezier(0.25, 0.6, 0.35, 1);
-}
-
 .legend--hooh {
 	clip-path: polygon(0 0, 65% 0, 35% 100%, 0 100%);
 }

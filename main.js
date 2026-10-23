@@ -21,11 +21,12 @@ const STAGE_CENTER = { x: 0.5, y: 0.5 };
 const FULL_STAGE = { left: 0, top: 0, right: 1, bottom: 1 };
 const SCENE_ENTERED_CLASS = "scene--entered";
 const STICKY_TOLERANCE_PX = 1;
+const PAN_DURATION_MS = 9000;
 // Focus is a source pixel anchored at a target fraction of the stage width and
 // of the height above the dialogue box. The image always covers `region`, a
 // stage fraction matching each legend's CSS mask. New Bark takes its scale
 // from the viewport so it stays still while the handheld frame expands. Once a scene starts fading
-// in, CSS pans it once by min(max, ratio * stage size) CSS pixels, from the
+// in, it pans once by min(max, ratio * stage size) CSS pixels, from the
 // `from` multiple to the `to` multiple.
 const SCENE_SHOTS = [
 	{
@@ -132,6 +133,7 @@ if (
 		...shot,
 		image: document.querySelector(shot.selector),
 	})).filter((shot) => shot.image instanceof HTMLElement);
+	const panStartTimes = new Map();
 
 	function getPanOffset(axis, stageSize, progress) {
 		if (!axis) {
@@ -141,17 +143,36 @@ if (
 		return amount * (axis.from + (axis.to - axis.from) * progress);
 	}
 
-	// Places an image edge on the device-pixel grid within [minimum, maximum].
-	function snapEdge(value, minimum, maximum, pixelRatio) {
-		return (
-			Math.min(
-				Math.floor(maximum * pixelRatio),
-				Math.max(
-					Math.ceil(minimum * pixelRatio),
-					Math.round(value * pixelRatio),
-				),
-			) / pixelRatio
+	function snapToDevicePixel(edge, stageOrigin, round) {
+		const pixelRatio = globalThis.devicePixelRatio || 1;
+		return round((stageOrigin + edge) * pixelRatio) / pixelRatio - stageOrigin;
+	}
+
+	// Places a stage-relative image edge within [minimum, maximum] on the
+	// viewport's device-pixel grid, so nearest-neighbor sampling stays uniform.
+	function snapEdge(value, minimum, maximum, stageOrigin) {
+		return Math.min(
+			snapToDevicePixel(maximum, stageOrigin, Math.floor),
+			Math.max(
+				snapToDevicePixel(minimum, stageOrigin, Math.ceil),
+				snapToDevicePixel(value, stageOrigin, Math.round),
+			),
 		);
+	}
+
+	// Pans ease out over a fixed time once their scene enters; scrolling back
+	// past the scene resets it.
+	function getPanProgress(shot) {
+		const startTime = panStartTimes.get(shot.image.closest(".scene"));
+		if (startTime === undefined) {
+			return 0;
+		}
+		const progress = clamp(
+			(globalThis.performance.now() - startTime) / PAN_DURATION_MS,
+			0,
+			1,
+		);
+		return 1 - (1 - progress) ** SMOOTHSTEP_SCALE;
 	}
 
 	// Scales the screenshot down as far as it can while still covering its
@@ -166,10 +187,7 @@ if (
 		if (narrow) {
 			region = shot.narrowRegion ?? FULL_STAGE;
 		}
-		let panProgress = 0;
-		if (shot.image.closest(`.${SCENE_ENTERED_CLASS}`)) {
-			panProgress = 1;
-		}
+		const panProgress = getPanProgress(shot);
 
 		const pixelRatio = globalThis.devicePixelRatio || 1;
 		const regionLeft = region.left * stage.width;
@@ -200,7 +218,7 @@ if (
 				getPanOffset(shot.pan?.x, stage.width, panProgress),
 			regionRight - width,
 			regionLeft,
-			pixelRatio,
+			stage.left,
 		);
 		const top = snapEdge(
 			focusHeight * target.y -
@@ -208,7 +226,7 @@ if (
 				getPanOffset(shot.pan?.y, stage.height, panProgress),
 			regionBottom - height,
 			regionTop,
-			pixelRatio,
+			stage.top,
 		);
 		shot.image.style.transform = `translate3d(${left - stage.width / 2}px, ${top - stage.height / 2}px, 0) scale(${scale})`;
 	}
@@ -246,14 +264,25 @@ if (
 	}
 
 	// Cues hold one boolean per layer in paint order; CSS times each fade.
+	// Returns whether a pan is still running and needs another frame.
 	function updateScenes(layerCues, titleCue, dialogueTop) {
+		const now = globalThis.performance.now();
 		sceneLayers.forEach((layer, index) => {
-			layer.classList.toggle(SCENE_ENTERED_CLASS, Boolean(layerCues[index]));
+			const entered = Boolean(layerCues[index]);
+			if (!entered) {
+				panStartTimes.delete(layer);
+			} else if (!panStartTimes.has(layer)) {
+				panStartTimes.set(layer, now);
+			}
+			layer.classList.toggle(SCENE_ENTERED_CLASS, entered);
 		});
 		story.style.setProperty("--outro-opacity", String(Number(titleCue)));
 		story.style.setProperty("--outro-panel-background", "transparent");
 		placeShots(dialogueTop);
 		placeOutroTitle();
+		return Array.from(panStartTimes.values()).some(
+			(startTime) => now - startTime < PAN_DURATION_MS,
+		);
 	}
 
 	// Reduced motion keeps only the CSS-pinned New Bark hero and a static outro.
@@ -264,6 +293,7 @@ if (
 		for (const layer of sceneLayers) {
 			layer.classList.remove(SCENE_ENTERED_CLASS);
 		}
+		panStartTimes.clear();
 		placeShots(Number.POSITIVE_INFINITY);
 	}
 
@@ -657,7 +687,9 @@ if (
 				"--stage-inset-left",
 				`${horizontalInset * insetScale}px`,
 			);
-			updateSceneCues();
+			if (updateSceneCues()) {
+				scheduleLayoutUpdate();
+			}
 		}
 
 		// Scenes follow the dialogue box: Ecruteak once it settles, the legends
@@ -669,7 +701,7 @@ if (
 			const titleTop = outroTitle?.getBoundingClientRect().top ?? 0;
 			const dialogueLeaving =
 				dialogueBoxRect.top < settledTop - STICKY_TOLERANCE_PX;
-			updateScenes(
+			return updateScenes(
 				[
 					dialogueBoxRect.top <= settledTop + STICKY_TOLERANCE_PX,
 					requestedDialogueState === "going-crazy" ||
