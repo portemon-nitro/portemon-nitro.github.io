@@ -27,8 +27,6 @@
 	--ink: rgb(245 237 223);
 	--muted-ink: rgb(199 188 170);
 	--soft-ink: rgb(153 143 128);
-	--media-new-bark: rgb(111 156 139);
-	--media-rotation: rgb(181 143 103);
 	--dialogue-outer: rgb(26 24 21);
 	--dialogue-trim: rgb(176 140 92);
 	--dialogue-separator: rgb(41 36 31);
@@ -115,12 +113,46 @@ ul {
 
 .scene-surface {
 	overflow: hidden;
-	background: var(--media-new-bark);
-	transition: background-color 160ms ease;
+	background: rgb(0 0 0);
 }
 
-.scene-surface[data-media="rotation"] {
-	background: var(--media-rotation);
+.scene,
+.legend,
+.scene-blackout {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.scene:not(.scene--newbark),
+.scene-blackout {
+	opacity: 0;
+}
+
+.scene-blackout {
+	background: rgb(0 0 0);
+}
+
+.scene-surface img {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	display: block;
+	width: 2560px;
+	height: 1440px;
+	max-width: none;
+	max-height: none;
+	image-rendering: pixelated;
+	transform-origin: top left;
+}
+
+.scene--newbark img {
+	transform: translate3d(-1230px, -700px, 0);
+}
+
+.legend--hooh {
+	clip-path: polygon(0 0, 100% 0, 0 100%);
 }
 
 .device-frame {
@@ -347,6 +379,45 @@ ul {
 	color: var(--dialogue-accent);
 }
 
+.story__outro {
+	position: relative;
+	height: 175svh;
+}
+
+.story__outro-panel {
+	display: grid;
+	position: sticky;
+	z-index: 1;
+	top: 0;
+	height: 100svh;
+	place-content: center;
+	background: var(--outro-panel-background, rgb(0 0 0));
+	pointer-events: none;
+	text-align: center;
+}
+
+.story__outro-title {
+	display: grid;
+	gap: 1.25rem;
+	max-width: min(92vw, 60rem);
+	color: var(--ink);
+	font-family: var(--font-site);
+	opacity: var(--outro-opacity, 1);
+}
+
+.story__outro-title h2 {
+	font-size: clamp(2.4rem, 6vw, 6.5rem);
+	font-weight: 700;
+	line-height: 1.05;
+}
+
+.story__outro-title p {
+	font-size: clamp(1rem, 2.25vw, 1.8rem);
+	font-weight: 700;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+}
+
 .final-menu {
 	position: relative;
 	min-height: 100svh;
@@ -443,6 +514,12 @@ ul {
 	line-height: 1.65;
 }
 
+@media (max-width: 699px) {
+	.legend--hooh {
+		clip-path: polygon(0 0, 100% 0, 100% 45%, 0 55%);
+	}
+}
+
 @media (max-width: 600px) {
 	.story__beat {
 		padding: 1.25rem;
@@ -515,8 +592,21 @@ ul {
 
 	.scene-surface {
 		inset: 0;
-		background: var(--media-new-bark);
-		transition: none;
+	}
+
+	.scene:not(.scene--newbark),
+	.scene-blackout {
+		display: none;
+	}
+
+	.story__outro {
+		height: auto;
+	}
+
+	.story__outro-panel {
+		position: relative;
+		min-height: 100svh;
+		height: auto;
 	}
 
 	.device-frame {

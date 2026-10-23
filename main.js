@@ -7,11 +7,89 @@ globalThis.scrollTo(0, 0);
 const HANDHELD_WIDTH = 256;
 const HANDHELD_HEIGHT = 192;
 const PAGE_GUTTER = 48;
-const NEW_BARK_LOOP_DURATION_MS = 2000;
-const RELEASE_THRESHOLD = 0.9;
 const BREAKOUT_DISTANCE_VIEWPORTS = 1.65;
 const INITIAL_STAGE_TOP_RATIO = 0.4;
 const SMOOTHSTEP_SCALE = 3;
+const SOURCE_WIDTH = 2560;
+const SOURCE_HEIGHT = 1440;
+const LEGENDS_NARROW_MAX_WIDTH = 699;
+const LEGENDS_DOUBLE_SCALE_MIN_WIDTH = 900;
+const STAGE_CENTER = { x: 0.5, y: 0.5 };
+// Story scroll positions are measured in stage heights from the story top.
+const SCENE_FADES = [
+	{ selector: ".scene--ecutreak", start: 1.9, end: 2.1 },
+	{ selector: ".scene--celebi", start: 2.9, end: 3.1 },
+	{ selector: ".scene--legends", start: 3.9, end: 4.1 },
+	{ selector: ".scene--dragonsden", start: 5.05, end: 5.25 },
+	{ selector: ".scene-blackout", start: 6.35, end: 6.6 },
+];
+const OUTRO_TITLE_FADE = { start: 6.6, end: 6.85 };
+// Focus is a source pixel anchored at a stage fraction. Pan amounts are
+// min(max, ratio * stage size) CSS pixels, moved from `from` to `to` multiples.
+const SCENE_SHOTS = [
+	{
+		selector: ".scene--newbark img",
+		focus: { x: 1230, y: 700 },
+		target: STAGE_CENTER,
+	},
+	{
+		selector: ".scene--ecutreak img",
+		focus: { x: 1220, y: 690 },
+		target: STAGE_CENTER,
+		pan: {
+			start: 1.9,
+			end: 3.1,
+			x: { max: 56, ratio: 0.035, from: 1, to: -1 },
+			y: { max: 28, ratio: 0.025, from: 1, to: -1 },
+		},
+	},
+	{
+		selector: ".scene--celebi img",
+		focus: { x: 1255, y: 550 },
+		target: STAGE_CENTER,
+		pan: {
+			start: 2.9,
+			end: 4.1,
+			x: { max: 32, ratio: 0.022, from: -1, to: 1 },
+			y: { max: 90, ratio: 0.07, from: 0, to: -1 },
+		},
+	},
+	{
+		selector: ".legend--hooh img",
+		focus: { x: 1280, y: 625 },
+		target: { x: 0.31, y: 0.32 },
+		narrowTarget: { x: 0.44, y: 0.27 },
+		wideMinimumScale: 2,
+		pan: {
+			start: 3.9,
+			end: 5.25,
+			y: { max: 90, ratio: 0.08, from: -1, to: 1 },
+		},
+	},
+	{
+		selector: ".legend--lugia img",
+		focus: { x: 1280, y: 675 },
+		target: { x: 0.69, y: 0.68 },
+		narrowTarget: { x: 0.56, y: 0.73 },
+		wideMinimumScale: 2,
+		pan: {
+			start: 3.9,
+			end: 5.25,
+			y: { max: 90, ratio: 0.08, from: 1, to: -1 },
+		},
+	},
+	{
+		selector: ".scene--dragonsden img",
+		focus: { x: 1430, y: 600 },
+		target: STAGE_CENTER,
+		pan: {
+			start: 5.05,
+			end: 6.6,
+			x: { max: 64, ratio: 0.04, from: 1, to: -1 },
+			y: { max: 56, ratio: 0.05, from: 0, to: -1 },
+		},
+	},
+];
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 const TYPEWRITER_CHARACTER_DELAY_MS = 30;
 const DIALOGUE_CRAZY_ENTER_THRESHOLD = 0.35;
@@ -55,53 +133,106 @@ if (
 ) {
 	const motionPreference = globalThis.matchMedia(REDUCED_MOTION_QUERY);
 	let layoutFrameId = 0;
-	let mediaMode = "new-bark";
-	const newBarkLoopOrigin = globalThis.performance.now();
-	let handoffTimeoutId = 0;
 
 	function clamp(value, minimum, maximum) {
 		return Math.min(Math.max(value, minimum), maximum);
 	}
 
-	function setMediaMode(nextMode) {
-		if (mediaMode === nextMode) {
-			return;
-		}
-
-		mediaMode = nextMode;
-		sceneSurface.dataset.media = nextMode;
+	function ease(value) {
+		const progress = clamp(value, 0, 1);
+		return progress * progress * (SMOOTHSTEP_SCALE - 2 * progress);
 	}
 
-	function armHandoff() {
-		if (mediaMode === "rotation" || handoffTimeoutId !== 0) {
-			return;
+	const sceneFades = SCENE_FADES.map((fade) => ({
+		...fade,
+		element: document.querySelector(fade.selector),
+	})).filter((fade) => fade.element instanceof HTMLElement);
+	const sceneShots = SCENE_SHOTS.map((shot) => ({
+		...shot,
+		image: document.querySelector(shot.selector),
+	})).filter((shot) => shot.image instanceof HTMLElement);
+
+	function getFadeProgress(storyProgress, range) {
+		return ease((storyProgress - range.start) / (range.end - range.start));
+	}
+
+	function getPanOffset(axis, stageSize, progress) {
+		if (!axis) {
+			return 0;
+		}
+		const amount = Math.min(axis.max, axis.ratio * stageSize);
+		return amount * (axis.from + (axis.to - axis.from) * progress);
+	}
+
+	// Keeps the 2560x1440 screenshot at an integer scale covering the stage,
+	// anchoring its focus pixel at the target fraction without exposing edges.
+	function placeShot(shot, stage, storyProgress) {
+		let { target } = shot;
+		if (shot.narrowTarget && stage.width <= LEGENDS_NARROW_MAX_WIDTH) {
+			target = shot.narrowTarget;
+		}
+		let minimumScale = 1;
+		if (
+			shot.wideMinimumScale &&
+			stage.width >= LEGENDS_DOUBLE_SCALE_MIN_WIDTH
+		) {
+			minimumScale = shot.wideMinimumScale;
+		}
+		let panProgress = 0;
+		if (shot.pan) {
+			panProgress = getFadeProgress(storyProgress, shot.pan);
 		}
 
-		const elapsed = Math.max(
-			0,
-			globalThis.performance.now() - newBarkLoopOrigin,
+		const scale = Math.max(
+			minimumScale,
+			Math.ceil(
+				Math.max(stage.width / SOURCE_WIDTH, stage.height / SOURCE_HEIGHT),
+			),
 		);
-		const loopPhase = elapsed % NEW_BARK_LOOP_DURATION_MS;
-		let remaining = NEW_BARK_LOOP_DURATION_MS - loopPhase;
-		if (loopPhase === 0) {
-			remaining = 0;
-		}
-
-		handoffTimeoutId = globalThis.setTimeout(() => {
-			handoffTimeoutId = 0;
-			if (mediaMode === "new-bark") {
-				setMediaMode("rotation");
-			}
-		}, remaining);
+		const left = clamp(
+			Math.round(
+				stage.width * target.x -
+					scale * shot.focus.x +
+					getPanOffset(shot.pan?.x, stage.width, panProgress),
+			),
+			stage.width - SOURCE_WIDTH * scale,
+			0,
+		);
+		const top = clamp(
+			Math.round(
+				stage.height * target.y -
+					scale * shot.focus.y +
+					getPanOffset(shot.pan?.y, stage.height, panProgress),
+			),
+			stage.height - SOURCE_HEIGHT * scale,
+			0,
+		);
+		shot.image.style.transform = `translate3d(${left - stage.width / 2}px, ${top - stage.height / 2}px, 0) scale(${scale})`;
 	}
 
-	function reconcileMedia(progress) {
-		if (motionPreference.matches || mediaMode === "rotation") {
-			return;
+	function updateScenes(storyProgress) {
+		for (const fade of sceneFades) {
+			fade.element.style.opacity = String(getFadeProgress(storyProgress, fade));
 		}
+		story.style.setProperty(
+			"--outro-opacity",
+			String(getFadeProgress(storyProgress, OUTRO_TITLE_FADE)),
+		);
+		story.style.setProperty("--outro-panel-background", "transparent");
 
-		if (progress >= RELEASE_THRESHOLD) {
-			armHandoff();
+		const stage = sceneSurface.getBoundingClientRect();
+		for (const shot of sceneShots) {
+			placeShot(shot, stage, storyProgress);
+		}
+	}
+
+	// Reduced motion keeps only the CSS-pinned New Bark hero and a static outro.
+	function updateStaticScene() {
+		story.style.removeProperty("--outro-opacity");
+		story.style.removeProperty("--outro-panel-background");
+		const stage = sceneSurface.getBoundingClientRect();
+		for (const shot of sceneShots) {
+			placeShot(shot, stage, 0);
 		}
 	}
 
@@ -450,6 +581,7 @@ if (
 			updateDialogue();
 
 			if (motionPreference.matches) {
+				updateStaticScene();
 				return;
 			}
 
@@ -494,7 +626,9 @@ if (
 				"--stage-inset-left",
 				`${horizontalInset * insetScale}px`,
 			);
-			reconcileMedia(progress);
+			updateScenes(
+				-story.getBoundingClientRect().top / visualStage.offsetHeight,
+			);
 		}
 
 		function scheduleLayoutUpdate() {
@@ -508,12 +642,12 @@ if (
 			});
 		}
 
-		sceneSurface.dataset.media = mediaMode;
 		updateLayout();
 		globalThis.addEventListener("scroll", scheduleLayoutUpdate, {
 			passive: true,
 		});
 		globalThis.addEventListener("resize", scheduleLayoutUpdate);
+		motionPreference.addEventListener("change", scheduleLayoutUpdate);
 	}
 }
 
