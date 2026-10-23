@@ -58,13 +58,6 @@ const SCENE_SHOTS = [
 		target: { x: 0.3, y: 0.5 },
 		region: { left: 0, top: 0, right: 0.65, bottom: 1 },
 		narrowTarget: { x: 0.5, y: 0.25 },
-		narrowRegion: {
-			left: 0,
-			top: 0,
-			right: 1,
-			bottom: 1,
-			aboveDialogue: true,
-		},
 		pan: {
 			y: { max: 26, ratio: 0.025, from: -1, to: 1 },
 		},
@@ -942,8 +935,6 @@ if (
 
 			if (motionPreference.matches) {
 				dialogueBox.classList.remove(DIALOGUE_FADED_CLASS);
-				dialogueBox.style.removeProperty("--dialogue-fade-top");
-				dialogueBox.style.removeProperty("--dialogue-fade-left");
 				updateStaticScene();
 				return;
 			}
@@ -1020,22 +1011,6 @@ if (
 			const settledTop = Number.parseFloat(getComputedStyle(dialogueBox).top);
 			const dialogueProgress = getDialogueProgress();
 			const dialogueFaded = dialogueProgress >= DIALOGUE_FADE_THRESHOLD;
-			if (
-				dialogueFaded &&
-				!dialogueBox.classList.contains(DIALOGUE_FADED_CLASS)
-			) {
-				dialogueBox.style.setProperty(
-					"--dialogue-fade-top",
-					`${dialogueBoxRect.top}px`,
-				);
-				dialogueBox.style.setProperty(
-					"--dialogue-fade-left",
-					`${dialogueBoxRect.left}px`,
-				);
-			} else if (!dialogueFaded) {
-				dialogueBox.style.removeProperty("--dialogue-fade-top");
-				dialogueBox.style.removeProperty("--dialogue-fade-left");
-			}
 			dialogueBox.classList.toggle(DIALOGUE_FADED_CLASS, dialogueFaded);
 			return updateScenes(
 				[
@@ -1065,13 +1040,24 @@ if (
 		let lastReservedDialogueWidth = 0;
 
 		function handleViewportResize() {
+			const nextGeometry = measureViewportGeometry();
 			const dialogueWidth = dialogueBox.getBoundingClientRect().width;
-			if (
+			const dialogueWidthChanged =
 				Number.isFinite(dialogueWidth) &&
 				dialogueWidth > 0 &&
 				Math.abs(dialogueWidth - lastReservedDialogueWidth) >
-					DIALOGUE_WIDTH_CHANGE_THRESHOLD_PX
-			) {
+					DIALOGUE_WIDTH_CHANGE_THRESHOLD_PX;
+			const stageGeometryChanged =
+				!viewportGeometry ||
+				(nextGeometry &&
+					(nextGeometry.stageWidth !== viewportGeometry.stageWidth ||
+						nextGeometry.stageHeight !== viewportGeometry.stageHeight ||
+						nextGeometry.smallHeight !== viewportGeometry.smallHeight ||
+						nextGeometry.largeHeight !== viewportGeometry.largeHeight));
+			if (!dialogueWidthChanged && !stageGeometryChanged) {
+				return;
+			}
+			if (dialogueWidthChanged) {
 				reserveDialogueHeight();
 				lastReservedDialogueWidth = dialogueWidth;
 			}

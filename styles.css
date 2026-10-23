@@ -125,10 +125,12 @@ ul {
 	background: transparent;
 	appearance: none;
 	cursor: pointer;
+	-webkit-tap-highlight-color: transparent;
 }
 
 .story__advance:focus-visible {
-	outline: none;
+	outline: 3px solid var(--focus);
+	outline-offset: -6px;
 }
 
 .viewport-height-probe {
@@ -422,13 +424,10 @@ ul {
 		inset 0 0 0 10px var(--dialogue-highlight);
 	color: var(--dialogue-text);
 	transition: opacity 700ms ease-in-out;
+	-webkit-tap-highlight-color: transparent;
 }
 
 .dialogue-box--faded {
-	position: fixed;
-	top: var(--dialogue-fade-top);
-	left: var(--dialogue-fade-left);
-	margin: 0;
 	opacity: 0;
 	pointer-events: none;
 }
@@ -530,28 +529,29 @@ ul {
 	text-align: center;
 }
 
-@supports (height: 100dvh) {
+/* Stable stage geometry prevents toolbar animations from moving snap anchors. */
+@supports (height: 100lvh) {
 	.story {
 		--stage-inset-bottom: max(
 			0px,
-			calc(100dvh - var(--stage-inset-top) - var(--contained-height))
+			calc(100lvh - var(--stage-inset-top) - var(--contained-height))
 		);
 	}
 
 	.story__visual {
-		height: 100dvh;
+		height: 100lvh;
 	}
 
 	.story__beats {
-		margin-top: -100dvh;
+		margin-top: -100lvh;
 	}
 
 	.story__outro {
-		margin-top: -100dvh;
+		margin-top: -100lvh;
 	}
 
 	.story__outro-panel {
-		height: 100dvh;
+		height: 100lvh;
 	}
 }
 
@@ -613,6 +613,7 @@ ul {
 	color: var(--ink);
 	text-align: left;
 	text-decoration: none;
+	-webkit-tap-highlight-color: transparent;
 }
 
 .menu-option__cursor {
@@ -678,8 +679,7 @@ ul {
 
 @media (max-width: 699px) {
 	.legend--hooh {
-		/* The seam sits within the height above the dialogue box, which the
-		   Ho-Oh narrow region in main.js covers. */
+		/* Keep the seam within the visible area above the dialogue box. */
 		clip-path: polygon(
 			0 0,
 			100% 0,
