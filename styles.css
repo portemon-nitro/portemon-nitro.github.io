@@ -54,6 +54,8 @@
 
 html {
 	background: var(--page-background);
+	overflow-x: clip;
+	overscroll-behavior: none;
 	scroll-behavior: smooth;
 	scroll-snap-type: y proximity;
 }
@@ -64,7 +66,7 @@ html.story--slow-scroll {
 
 body {
 	margin: 0;
-	overflow-x: hidden;
+	overflow-x: clip;
 	background: var(--page-background);
 }
 

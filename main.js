@@ -26,6 +26,7 @@ const SCENE_ENTERED_CLASS = "scene--entered";
 const STICKY_TOLERANCE_PX = 1;
 const DIALOGUE_WIDTH_CHANGE_THRESHOLD_PX = 0.5;
 const PAN_DURATION_MS = 9000;
+const BEAT_ADVANCE_DURATION_MS = 900;
 const BREAKOUT_ADVANCE_DURATION_MS = 3000;
 const BOTTOM_ADVANCE_DURATION_MS = 1500;
 // Focus is a source pixel anchored at a target fraction of the stage width and
@@ -58,8 +59,9 @@ const SCENE_SHOTS = [
 		target: { x: 0.3, y: 0.5 },
 		region: { left: 0, top: 0, right: 0.65, bottom: 1 },
 		narrowTarget: { x: 0.5, y: 0.25 },
+		narrowOffset: { y: -128 },
 		pan: {
-			y: { max: 26, ratio: 0.025, from: -1, to: 1 },
+			y: { max: 12, ratio: 0.025, from: -1, to: 1 },
 		},
 	},
 	{
@@ -69,7 +71,7 @@ const SCENE_SHOTS = [
 		region: { left: 0.35, top: 0, right: 1, bottom: 1 },
 		narrowTarget: { x: 0.5, y: 0.75 },
 		pan: {
-			y: { max: 26, ratio: 0.025, from: 1, to: -1 },
+			y: { max: 12, ratio: 0.025, from: 1, to: -1 },
 		},
 	},
 	{
@@ -135,6 +137,8 @@ const storyAdvanceTargets = [
 ].flatMap((selector) => Array.from(document.querySelectorAll(selector)));
 const breakoutAdvanceTarget = document.querySelector(".story__breakout-snap");
 let slowScrollFrame = 0;
+let touchStartY = null;
+let scrollNavigationActive = false;
 
 function cancelSlowScroll() {
 	if (slowScrollFrame !== 0) {
@@ -144,7 +148,7 @@ function cancelSlowScroll() {
 	document.documentElement.classList.remove("story--slow-scroll");
 }
 
-function scrollSlowlyTo(targetTop, duration) {
+function scrollSlowlyTo(targetTop, duration, onComplete) {
 	cancelSlowScroll();
 	document.documentElement.classList.add("story--slow-scroll");
 	const startTop = globalThis.scrollY;
@@ -166,50 +170,104 @@ function scrollSlowlyTo(targetTop, duration) {
 		} else {
 			slowScrollFrame = 0;
 			document.documentElement.classList.remove("story--slow-scroll");
+			onComplete?.();
 		}
 	}
 
 	slowScrollFrame = globalThis.requestAnimationFrame(step);
 }
 
-globalThis.addEventListener("wheel", cancelSlowScroll, { passive: true });
-globalThis.addEventListener("touchstart", cancelSlowScroll, { passive: true });
-globalThis.addEventListener("pointerdown", cancelSlowScroll, { passive: true });
-globalThis.addEventListener("keydown", cancelSlowScroll);
+function interruptScrollNavigation() {
+	cancelSlowScroll();
+	scrollNavigationActive = false;
+}
 
-function advanceStory() {
+globalThis.addEventListener("pointerdown", interruptScrollNavigation, {
+	passive: true,
+});
+globalThis.addEventListener("keydown", interruptScrollNavigation);
+
+function advanceStory(direction = 1, onComplete) {
 	const scrollTop = globalThis.scrollY;
-	const nextTarget = storyAdvanceTargets
+	const targets = storyAdvanceTargets
 		.map((element) => ({
 			element,
 			top: element.getBoundingClientRect().top + scrollTop,
 		}))
-		.filter(({ top }) => top > scrollTop + 1)
-		.sort((first, second) => first.top - second.top)[0];
+		.sort((first, second) => first.top - second.top);
+	const nextTarget = direction > 0
+		? targets.find(({ top }) => top > scrollTop + 1)
+		: targets.findLast(({ top }) => top < scrollTop - 1);
 	const pageBottom = Math.max(
 		0,
 		document.documentElement.scrollHeight - globalThis.innerHeight,
 	);
-	const destination = Math.min(nextTarget?.top ?? pageBottom, pageBottom);
-	if (
-		nextTarget?.element === breakoutAdvanceTarget &&
-		!globalThis.matchMedia(REDUCED_MOTION_QUERY).matches
-	) {
-		scrollSlowlyTo(destination, BREAKOUT_ADVANCE_DURATION_MS);
+	const destination = direction > 0
+		? Math.min(nextTarget?.top ?? pageBottom, pageBottom)
+		: Math.max(nextTarget?.top ?? 0, 0);
+	if (Math.abs(destination - scrollTop) < 1) {
+		onComplete?.();
 		return;
 	}
-	if (!nextTarget && !globalThis.matchMedia(REDUCED_MOTION_QUERY).matches) {
-		scrollSlowlyTo(destination, BOTTOM_ADVANCE_DURATION_MS);
+	const reducedMotion = globalThis.matchMedia(REDUCED_MOTION_QUERY).matches;
+	if (
+		direction > 0 &&
+		nextTarget?.element === breakoutAdvanceTarget &&
+		!reducedMotion
+	) {
+		scrollSlowlyTo(destination, BREAKOUT_ADVANCE_DURATION_MS, onComplete);
+		return;
+	}
+	if (direction > 0 && !nextTarget && !reducedMotion) {
+		scrollSlowlyTo(destination, BOTTOM_ADVANCE_DURATION_MS, onComplete);
+		return;
+	}
+	if (!reducedMotion) {
+		scrollSlowlyTo(destination, BEAT_ADVANCE_DURATION_MS, onComplete);
 		return;
 	}
 	cancelSlowScroll();
 	globalThis.scrollTo({
 		top: destination,
-		behavior: globalThis.matchMedia(REDUCED_MOTION_QUERY).matches
-			? "auto"
-			: "smooth",
+		behavior: "auto",
+	});
+	onComplete?.();
+}
+
+function handleScrollNavigation(direction) {
+	if (scrollNavigationActive) {
+		return;
+	}
+	scrollNavigationActive = true;
+	advanceStory(direction, () => {
+		scrollNavigationActive = false;
 	});
 }
+
+globalThis.addEventListener("wheel", (event) => {
+	if (event.deltaY === 0) {
+		return;
+	}
+	event.preventDefault();
+	handleScrollNavigation(Math.sign(event.deltaY));
+}, { passive: false });
+
+globalThis.addEventListener("touchstart", (event) => {
+	touchStartY = event.touches[0]?.clientY ?? null;
+}, { passive: true });
+
+globalThis.addEventListener("touchend", (event) => {
+	const endY = event.changedTouches[0]?.clientY;
+	if (touchStartY === null || endY === undefined) {
+		touchStartY = null;
+		return;
+	}
+	const deltaY = touchStartY - endY;
+	touchStartY = null;
+	if (Math.abs(deltaY) >= 1) {
+		handleScrollNavigation(Math.sign(deltaY));
+	}
+}, { passive: true });
 
 if (storyAdvanceButton instanceof HTMLButtonElement) {
 	storyAdvanceButton.addEventListener("click", advanceStory);
@@ -415,8 +473,9 @@ if (
 	function placeShot(shot, stage, focusHeight, largeHeight) {
 		const narrow = stage.width <= LEGENDS_NARROW_MAX_WIDTH;
 		let { target } = shot;
-		if (narrow && shot.narrowTarget) {
-			target = shot.narrowTarget;
+		const focus = shot.focus;
+		if (narrow) {
+			target = shot.narrowTarget ?? target;
 		}
 		const {
 			left: regionLeft,
@@ -442,7 +501,7 @@ if (
 		const topBounds = { minimum: regionBottom - height, maximum: regionTop };
 		const left = snapEdge(
 			getPannedEdge(
-				{ ...leftBounds, edge: stage.width * target.x - scale * shot.focus.x },
+				{ ...leftBounds, edge: stage.width * target.x - scale * focus.x },
 				shot.pan?.x,
 				stage.width,
 				panProgress,
@@ -451,9 +510,9 @@ if (
 			leftBounds.maximum,
 			stage.left,
 		);
-		const top = snapEdge(
+		let top = snapEdge(
 			getPannedEdge(
-				{ ...topBounds, edge: focusHeight * target.y - scale * shot.focus.y },
+				{ ...topBounds, edge: focusHeight * target.y - scale * focus.y },
 				shot.pan?.y,
 				stage.height,
 				panProgress,
@@ -462,6 +521,13 @@ if (
 			topBounds.maximum,
 			stage.top,
 		);
+		if (narrow && shot.narrowOffset) {
+			top = snapToDevicePixel(
+				top + shot.narrowOffset.y,
+				stage.top,
+				Math.round,
+			);
+		}
 		shot.image.style.transform = `translate3d(${left - stage.width / 2}px, ${top - stage.height / 2}px, 0) scale(${scale})`;
 	}
 
