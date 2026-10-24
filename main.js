@@ -13,6 +13,7 @@ const INITIAL_STAGE_TOP_RATIO = 0.5;
 const HANDHELD_GAME_PIXELS_WIDE = 192;
 const HANDHELD_MAX_HEIGHT_RATIO = 0.5;
 const SMOOTHSTEP_SCALE = 3;
+const EASE_OUT_EXPONENT = 3;
 // Screenshots are 512x288 game pixels captured at 5x.
 const SOURCE_PIXELS_PER_GAME_PIXEL = 5;
 const GAME_WIDTH = 512;
@@ -155,11 +156,8 @@ function scrollSlowlyTo(targetTop, duration, onComplete) {
 	const startTime = globalThis.performance.now();
 
 	function step(now) {
-		const progress = Math.min(
-			1,
-			(now - startTime) / duration,
-		);
-		const easedProgress = 1 - (1 - progress) ** 3;
+		const progress = Math.min(1, (now - startTime) / duration);
+		const easedProgress = 1 - (1 - progress) ** EASE_OUT_EXPONENT;
 		globalThis.scrollTo({
 			top: startTop + (targetTop - startTop) * easedProgress,
 			behavior: "instant",
@@ -199,7 +197,8 @@ function getKeyScrollDirection(event) {
 			return -1;
 		case " ": {
 			// Space activates focused controls instead of scrolling.
-			const isControl = event.target instanceof Element &&
+			const isControl =
+				event.target instanceof Element &&
 				event.target.closest("a, button, input, select, textarea");
 			if (isControl) {
 				return 0;
@@ -224,7 +223,7 @@ globalThis.addEventListener("keydown", (event) => {
 	handleScrollNavigation(direction);
 });
 
-function advanceStory(direction = 1, onComplete) {
+function advanceStory(direction, onComplete) {
 	const scrollTop = globalThis.scrollY;
 	const targets = storyAdvanceTargets
 		.map((element) => ({
@@ -232,16 +231,16 @@ function advanceStory(direction = 1, onComplete) {
 			top: element.getBoundingClientRect().top + scrollTop,
 		}))
 		.sort((first, second) => first.top - second.top);
-	const nextTarget = direction > 0
-		? targets.find(({ top }) => top > scrollTop + 1)
-		: targets.findLast(({ top }) => top < scrollTop - 1);
 	const pageBottom = Math.max(
 		0,
 		document.documentElement.scrollHeight - globalThis.innerHeight,
 	);
-	const destination = direction > 0
-		? Math.min(nextTarget?.top ?? pageBottom, pageBottom)
-		: Math.max(nextTarget?.top ?? 0, 0);
+	let nextTarget = targets.findLast(({ top }) => top < scrollTop - 1);
+	let destination = Math.max(nextTarget?.top ?? 0, 0);
+	if (direction > 0) {
+		nextTarget = targets.find(({ top }) => top > scrollTop + 1);
+		destination = Math.min(nextTarget?.top ?? pageBottom, pageBottom);
+	}
 	if (Math.abs(destination - scrollTop) < 1) {
 		onComplete?.();
 		return;
@@ -281,30 +280,42 @@ function handleScrollNavigation(direction) {
 	});
 }
 
-globalThis.addEventListener("wheel", (event) => {
-	if (event.deltaY === 0) {
-		return;
-	}
-	event.preventDefault();
-	handleScrollNavigation(Math.sign(event.deltaY));
-}, { passive: false });
+globalThis.addEventListener(
+	"wheel",
+	(event) => {
+		if (event.deltaY === 0) {
+			return;
+		}
+		event.preventDefault();
+		handleScrollNavigation(Math.sign(event.deltaY));
+	},
+	{ passive: false },
+);
 
-globalThis.addEventListener("touchstart", (event) => {
-	touchStartY = event.touches[0]?.clientY ?? null;
-}, { passive: true });
+globalThis.addEventListener(
+	"touchstart",
+	(event) => {
+		touchStartY = event.touches[0]?.clientY ?? null;
+	},
+	{ passive: true },
+);
 
-globalThis.addEventListener("touchend", (event) => {
-	const endY = event.changedTouches[0]?.clientY;
-	if (touchStartY === null || endY === undefined) {
+globalThis.addEventListener(
+	"touchend",
+	(event) => {
+		const endY = event.changedTouches[0]?.clientY;
+		if (touchStartY === null || endY === undefined) {
+			touchStartY = null;
+			return;
+		}
+		const deltaY = touchStartY - endY;
 		touchStartY = null;
-		return;
-	}
-	const deltaY = touchStartY - endY;
-	touchStartY = null;
-	if (Math.abs(deltaY) >= 1) {
-		handleScrollNavigation(Math.sign(deltaY));
-	}
-}, { passive: true });
+		if (Math.abs(deltaY) >= 1) {
+			handleScrollNavigation(Math.sign(deltaY));
+		}
+	},
+	{ passive: true },
+);
 
 if (storyAdvanceButton instanceof HTMLButtonElement) {
 	// Pointer clicks must not focus the button, or the next key press would
@@ -312,19 +323,16 @@ if (storyAdvanceButton instanceof HTMLButtonElement) {
 	storyAdvanceButton.addEventListener("mousedown", (event) => {
 		event.preventDefault();
 	});
-	storyAdvanceButton.addEventListener("click", () => advanceStory());
+	storyAdvanceButton.addEventListener("click", () => advanceStory(1));
 }
 
 if (dialogueBox instanceof HTMLElement) {
 	dialogueBox.addEventListener("click", (event) => {
-		if (
-			event.target instanceof Element &&
-			event.target.closest("a, button")
-		) {
+		if (event.target instanceof Element && event.target.closest("a, button")) {
 			return;
 		}
 
-		advanceStory();
+		advanceStory(1);
 	});
 }
 
@@ -515,7 +523,7 @@ if (
 	function placeShot(shot, stage, focusHeight, largeHeight) {
 		const narrow = stage.width <= LEGENDS_NARROW_MAX_WIDTH;
 		let { target } = shot;
-		const focus = shot.focus;
+		const { focus } = shot;
 		if (narrow) {
 			target = shot.narrowTarget ?? target;
 		}
@@ -564,11 +572,7 @@ if (
 			stage.top,
 		);
 		if (narrow && shot.narrowOffset) {
-			top = snapToDevicePixel(
-				top + shot.narrowOffset.y,
-				stage.top,
-				Math.round,
-			);
+			top = snapToDevicePixel(top + shot.narrowOffset.y, stage.top, Math.round);
 		}
 		shot.image.style.transform = `translate3d(${left - stage.width / 2}px, ${top - stage.height / 2}px, 0) scale(${scale})`;
 	}
@@ -774,8 +778,7 @@ if (
 			],
 			[
 				"dragons-den-middle",
-				(DIALOGUE_RECRUITMENT_ENTER_THRESHOLD + DIALOGUE_FADE_THRESHOLD) /
-					2,
+				(DIALOGUE_RECRUITMENT_ENTER_THRESHOLD + DIALOGUE_FADE_THRESHOLD) / 2,
 			],
 		]);
 		let requestedDialogueState = "empty";
@@ -783,6 +786,7 @@ if (
 		let dialogueOperationActive = false;
 		let dialogueStarted = false;
 		let dialogueVisualItemElements = [];
+		const typedDialogueStates = new Set();
 
 		function getTargetDialogueText() {
 			return dialogueTextByState[requestedDialogueState] ?? "";
@@ -955,12 +959,13 @@ if (
 			}
 
 			requestedDialogueState = nextState;
-			if (motionPreference.matches) {
+			if (motionPreference.matches || typedDialogueStates.has(nextState)) {
 				displayedDialogueText = getTargetDialogueText();
 				renderDialogueVisual();
 				return;
 			}
 
+			typedDialogueStates.add(nextState);
 			displayedDialogueText = "";
 			renderDialogueVisual();
 			reconcileDialogue();
@@ -1162,7 +1167,7 @@ if (
 						nextGeometry.stageHeight !== viewportGeometry.stageHeight ||
 						nextGeometry.smallHeight !== viewportGeometry.smallHeight ||
 						nextGeometry.largeHeight !== viewportGeometry.largeHeight));
-			if (!dialogueWidthChanged && !stageGeometryChanged) {
+			if (!(dialogueWidthChanged || stageGeometryChanged)) {
 				return;
 			}
 			if (dialogueWidthChanged) {

@@ -248,16 +248,8 @@ ul {
 	padding: clamp(1.25rem, 4vw, 4rem);
 }
 
-.story__beat--intro,
-.story__beat--payoff {
-	scroll-snap-align: start;
-}
-
-.story__beat--payoff {
-	scroll-snap-align: none;
-}
-
 .story__beat--intro {
+	scroll-snap-align: start;
 	--intro-offset: clamp(2rem, 8svh, 5rem);
 	align-content: start;
 	justify-items: center;
