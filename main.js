@@ -185,7 +185,44 @@ function interruptScrollNavigation() {
 globalThis.addEventListener("pointerdown", interruptScrollNavigation, {
 	passive: true,
 });
-globalThis.addEventListener("keydown", interruptScrollNavigation);
+
+function getKeyScrollDirection(event) {
+	if (event.altKey || event.ctrlKey || event.metaKey) {
+		return 0;
+	}
+	switch (event.key) {
+		case "ArrowDown":
+		case "PageDown":
+			return 1;
+		case "ArrowUp":
+		case "PageUp":
+			return -1;
+		case " ": {
+			// Space activates focused controls instead of scrolling.
+			const isControl = event.target instanceof Element &&
+				event.target.closest("a, button, input, select, textarea");
+			if (isControl) {
+				return 0;
+			}
+			if (event.shiftKey) {
+				return -1;
+			}
+			return 1;
+		}
+		default:
+			return 0;
+	}
+}
+
+globalThis.addEventListener("keydown", (event) => {
+	const direction = getKeyScrollDirection(event);
+	if (direction === 0) {
+		interruptScrollNavigation();
+		return;
+	}
+	event.preventDefault();
+	handleScrollNavigation(direction);
+});
 
 function advanceStory(direction = 1, onComplete) {
 	const scrollTop = globalThis.scrollY;
@@ -270,6 +307,11 @@ globalThis.addEventListener("touchend", (event) => {
 }, { passive: true });
 
 if (storyAdvanceButton instanceof HTMLButtonElement) {
+	// Pointer clicks must not focus the button, or the next key press would
+	// make browsers show its focus ring over the scene.
+	storyAdvanceButton.addEventListener("mousedown", (event) => {
+		event.preventDefault();
+	});
 	storyAdvanceButton.addEventListener("click", () => advanceStory());
 }
 
