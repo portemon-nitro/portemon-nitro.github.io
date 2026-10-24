@@ -270,7 +270,7 @@ globalThis.addEventListener("touchend", (event) => {
 }, { passive: true });
 
 if (storyAdvanceButton instanceof HTMLButtonElement) {
-	storyAdvanceButton.addEventListener("click", advanceStory);
+	storyAdvanceButton.addEventListener("click", () => advanceStory());
 }
 
 if (dialogueBox instanceof HTMLElement) {
